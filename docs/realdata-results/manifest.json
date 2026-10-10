@@ -1,0 +1,51 @@
+{
+ "schema": "qg.coinbase_capture.v1",
+ "source": "wss://ws-feed.exchange.coinbase.com",
+ "subscribe": {
+  "type": "subscribe",
+  "product_ids": [
+   "BTC-USD"
+  ],
+  "channels": [
+   "level2_batch",
+   "heartbeat"
+  ]
+ },
+ "product_metadata": {
+  "id": "BTC-USD",
+  "base_currency": "BTC",
+  "quote_currency": "USD",
+  "quote_increment": "0.01",
+  "base_increment": "0.00000001",
+  "status": "online",
+  "trading_disabled": false
+ },
+ "metadata_url": "https://api.exchange.coinbase.com/products/BTC-USD",
+ "limits": {
+  "seconds": 600.0,
+  "max_bytes": 262144000,
+  "max_reconnects": 3
+ },
+ "started_wall_ns": 1791655082774698226,
+ "ended_wall_ns": 1791655682784179759,
+ "stop_reason": "duration",
+ "messages": 9956,
+ "bytes": 5796202,
+ "counts_by_type": {
+  "subscriptions": 1,
+  "snapshot": 1,
+  "l2update": 9355,
+  "heartbeat": 599
+ },
+ "sessions": [
+  {
+   "session": 1,
+   "start_wall_ns": 1791655082774816429,
+   "messages": 9956,
+   "end": "timeout"
+  }
+ ],
+ "reconnects": 0,
+ "raw_sha256": "835e07e9029232fac005665f5f71a9fa3a1cd691054f9dfffd96cb589d1a6ebc",
+ "notes": "local receipt timestamps only; no source-to-receiver latency claimed"
+}
