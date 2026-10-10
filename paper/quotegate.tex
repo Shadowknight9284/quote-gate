@@ -1,0 +1,65 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{amsmath,booktabs,graphicx}
+\title{QuoteGate: Information-Driven Trading Under Latency and Execution Constraints}
+\author{QuoteGate team (HackRU 2026)}
+\date{}
+\begin{document}
+\maketitle
+
+\section{Problem and contribution}
+% TODO(results): one paragraph. Systems + quant contributions; synthetic setting stated up front.
+We ask, under a declared synthetic market model, whether a displayed-quantity imbalance signal from
+one reference venue carries predictive information, and whether any advantage survives spread,
+fees, execution delay, and venue failures. All data are synthetic; nothing here is evidence about
+real markets.
+
+\section{System}
+% TODO(figure): small architecture diagram (market -> venues -> aggregator -> strategy -> router -> venue execution -> ledger).
+Venue simulators stream quotes over persistent TCP connections to an aggregator that tracks
+per-venue sessions, sequence order, and local-receipt freshness. The strategy observes only the
+reference venue's accepted quotes and freshness, plus its own confirmed position and order state.
+
+\section{Signal and policy}
+For bid and ask displayed quantities $b_t, a_t \ge 1$ at the reference venue,
+\begin{equation}
+  I_t = \frac{b_t - a_t}{b_t + a_t} \in (-1, 1).
+\end{equation}
+With threshold $\theta$ and limit $q_{\max}$, the target position is
+\begin{equation}
+  q^{*}_t = \begin{cases} +q_{\max} & I_t > \theta \\ -q_{\max} & I_t < -\theta \\ 0 & \text{otherwise,} \end{cases}
+\end{equation}
+and the order is $\Delta q_t = q^{*}_t - q_t$ (confirmed position), clipped to the order limit.
+No order is sent while the signal is stale, an order is outstanding, or an outcome is unknown.
+
+\section{Synthetic market and execution}
+Latent price $p_t$ in integer ticks; the reference venue quotes $[p_t, p_t + s]$, a second venue
+quotes no better. With probability $m$ the price moves one tick, up with probability
+$(1 + \beta I_t)/2$; $\beta = 0$ is the null regime. Orders are immediate-or-cancel limits at the
+observed price, filled in full at the venue's then-current ask (bid) or rejected; acknowledgement
+loss yields an \emph{unknown} outcome resolved only by reconciliation. Accounting:
+$c \leftarrow c - p\,\Delta q - f$, $q \leftarrow q + \Delta q$.
+
+\section{Experiments}
+% TODO(results): fixed matrix, seeds, frozen parameters; results table; one plot.
+\begin{table}[h]\centering\small
+\begin{tabular}{lrrrr}
+\toprule
+Cell & Fills & Gross & Net & Hit rate \\
+\midrule
+% TODO(results)
+\bottomrule
+\end{tabular}
+\caption{TODO(results).}
+\end{table}
+
+\section{Limitations}
+% TODO(results): synthetic one-step signal, no queue/impact, IOC fill model, single instrument.
+
+\begin{thebibliography}{9}\small
+% NOTE: verify each entry against the primary source before submission.
+\bibitem{cjp} \'A.~Cartea, S.~Jaimungal, J.~Penalva. \emph{Algorithmic and High-Frequency Trading}. Cambridge University Press, 2015.
+\bibitem{gb} M.~D.~Gould, J.~Bonart. Queue imbalance as a one-tick-ahead price predictor in a limit order book. \emph{Market Microstructure and Liquidity}, 2016.
+\bibitem{cks} R.~Cont, A.~Kukanov, S.~Stoikov. The price impact of order book events. \emph{Journal of Financial Econometrics}, 2014.
+\end{thebibliography}
+\end{document}
