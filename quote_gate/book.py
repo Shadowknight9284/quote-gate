@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 MAX_TICKS = 10**12
-MAX_QUANTITY = 10**9
+MAX_QUANTITY = 10**15   # quantities are integer units; real feeds use 1e-8 BTC units (R1)
 
 
 @dataclass(frozen=True, slots=True)
