@@ -11,6 +11,7 @@ import random
 from dataclasses import dataclass, field
 
 from .book import Book
+from .execution import match
 from .ledger import Fill, Ledger
 from .market_sim import MarketConfig, generate
 from .quant import PolicyConfig, Strategy, imbalance_bp, reference_signal
@@ -66,19 +67,17 @@ class SimVenue:
             if prior[0] == o:
                 return prior[1]
             return {"status": "REJECTED", "reason": "conflicting_order_id"}
-        q = self.quote
-        price = q.ask_ticks if o.side is Side.BUY else q.bid_ticks
         if o.epoch != self.epoch:
             res = {"status": "REJECTED", "reason": "session"}
-        elif (o.side is Side.BUY and price > o.limit_ticks) or (o.side is Side.SELL and price < o.limit_ticks):
-            res = {"status": "REJECTED", "reason": "price_moved"}
-        elif self.remaining[o.side] < o.qty:
-            res = {"status": "REJECTED", "reason": "insufficient_quantity"}
         else:
-            self.remaining[o.side] -= o.qty
-            signed = o.qty if o.side is Side.BUY else -o.qty
-            res = {"status": "FILLED", "fill": Fill(f"f-{o.order_id}", o.order_id, self.venue_id, signed,
-                                                    price, self.fee_per_unit * o.qty, o.decision_step, step)}
+            status, price, reason = match(o.side, o.qty, o.limit_ticks, self.quote, self.remaining)
+            if status == "FILLED":
+                self.remaining[o.side] -= o.qty
+                signed = o.qty if o.side is Side.BUY else -o.qty
+                res = {"status": "FILLED", "fill": Fill(f"f-{o.order_id}", o.order_id, self.venue_id, signed,
+                                                        price, self.fee_per_unit * o.qty, o.decision_step, step)}
+            else:
+                res = {"status": "REJECTED", "reason": reason}
         self.orders[o.order_id] = (o, res)
         return res
 

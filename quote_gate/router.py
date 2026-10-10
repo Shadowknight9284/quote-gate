@@ -28,10 +28,11 @@ class RouteDecision:
         return self.venue_id is not None
 
 
-def route(book: Book, side: Side, quantity: int, now_ns: int) -> RouteDecision:
+def route(book: Book, side: Side, quantity: int, now_ns: int,
+          allowed: frozenset | None = None) -> RouteDecision:
     """Buy: lowest eligible ask. Sell: highest eligible bid. Ties: lowest venue_id.
 
-    Eligible = FRESH status and displayed quantity >= requested quantity.
+    Eligible = FRESH status and displayed quantity >= requested quantity, and (if given) in `allowed`.
     """
     if not isinstance(side, Side):
         raise ValueError(f"invalid side: {side!r}")
@@ -41,6 +42,9 @@ def route(book: Book, side: Side, quantity: int, now_ns: int) -> RouteDecision:
     best_key = None
     excluded = []
     for vid, st in book.venues.items():          # venues are stored sorted by id
+        if allowed is not None and vid not in allowed:
+            excluded.append((vid, "not_allowed"))
+            continue
         status = st.status(now_ns, book.stale_after_ns)
         if status is not FeedStatus.FRESH:
             excluded.append((vid, status.value))

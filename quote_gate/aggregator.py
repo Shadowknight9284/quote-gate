@@ -63,6 +63,12 @@ class Aggregator:
         self.route_ns = Samples(sample_capacity)      # route computation only
         self.connects = {v: 0 for v in venue_addrs}
         self.venue_session = {v: None for v in venue_addrs}
+        # Live connection handles: vid -> {"writer", "epoch", "session", "instance"} (None if down).
+        self.conn = {v: None for v in venue_addrs}
+        # Optional order-path hooks (quote_gate.live). All run on the single feed reader task.
+        self.order_handler = None          # (vid, frame) for exec/status frames
+        self.quote_listener = None         # (vid, quote, receipt_ns) after an ACCEPTED quote
+        self.disconnect_listener = None    # (vid, epoch) when a connection ends
         self.feed_rtt_ns = {v: Samples(FEED_RTT_CAPACITY) for v in venue_addrs}
         self.anchor = Anchor(observer)
         self.artifact_dir = artifact_dir
@@ -159,6 +165,8 @@ class Aggregator:
                 epoch = book.on_connect(vid)
                 self.connects[vid] += 1
                 self.venue_session[vid] = hello.get("session")
+                self.conn[vid] = {"writer": writer, "epoch": epoch, "session": hello.get("session"),
+                                  "instance": hello.get("instance")}
                 self.events.add((time.monotonic_ns(), vid, "connect",
                                  {"epoch": epoch, "session": hello.get("session")}))
                 backoff = BACKOFF_INITIAL_S
@@ -176,12 +184,20 @@ class Aggregator:
                         else:
                             self._count_error(vid, "unmatched_pong")
                         continue
+                    if obj.get("type") in ("exec", "status"):
+                        if self.order_handler is not None:
+                            self.order_handler(vid, obj)
+                        else:
+                            self._count_error(vid, "unexpected_order_frame")
+                        continue
                     q = protocol.quote_from_obj(obj)
                     if q is None:
                         self._count_error(vid, "bad_shape")
                         continue
-                    book.on_quote(vid, epoch, q, t0)
+                    rejected = book.on_quote(vid, epoch, q, t0)
                     self.process_ns.add(time.monotonic_ns() - t0)
+                    if rejected is None and self.quote_listener is not None:
+                        self.quote_listener(vid, q, t0)
             except asyncio.CancelledError:
                 raise
             except (protocol.FrameError, ConnectionError, OSError, asyncio.TimeoutError) as e:
@@ -192,8 +208,11 @@ class Aggregator:
             finally:
                 if pinger is not None:
                     pinger.cancel()
+                self.conn[vid] = None
                 if epoch is not None:
                     book.on_disconnect(vid, epoch)
+                    if self.disconnect_listener is not None:
+                        self.disconnect_listener(vid, epoch)
                 if writer is not None:
                     writer.transport.abort()
             await asyncio.sleep(backoff)
