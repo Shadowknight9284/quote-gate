@@ -45,3 +45,21 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
 - origin/main unchanged at `396f2d8` (no teammate changes to preserve).
 - `docs/state.md` current-head line was stale (152 tests, "no CI"); corrected in the next commit,
   which must pass CI again before merge.
+
+## 2026-10-10T18:12Z — merge, post-merge state, Coinbase adapter (feature branch)
+- PR #1 merged (normal merge) at head `883562a` → merge commit `05b7f4f`; CI on main passed.
+  Local: unsanitized history kept as `local/unsanitized-main` (no upstream) + backup branch + bundle;
+  new `main` tracks `origin/main`. A local branch `pr-1` (sanitized `b15602e`) exists; left untouched.
+- Branch `feat/coinbase-replay`: stdlib read-only WebSocket client (no dependency installed),
+  pure L2 book (`l2book.py`), bounded capture, deterministic replay with hypothetical execution.
+  `book.MAX_QUANTITY` raised to 1e15 for 1e-8 BTC units; synthetic matrix re-run: identical.
+- Capture (authorized, public, read-only): 600 s, 9 956 messages, 0 reconnects. Replay twice:
+  identical hashes. Results in `docs/realdata.md`; metadata/report in `docs/realdata-results/`.
+- Tests: 179 (17 book fixtures, 8 replay fixtures with hand-traced exact values).
+- Not done: Tiger import of this dataset (needs separate approval); Hermes not used (bounded value).
+
+## 2026-10-10T18:40Z — PR #2 audit (branch feat/coinbase-replay)
+- Findings F1–F5 and WebSocket W1–W4 (see docs/realdata.md "Audit"); F1 and W1–W4 confirmed by
+  tests that fail on the pre-audit code. Fixed in scope; strategy and lot size unchanged.
+- Re-replay of capture 835e07e9… with audited code: twice, identical hashes (report ec2cda5f…,
+  normalized 285db8b6… unchanged). Units/notional/fee identities reconcile exactly in all scenarios.
