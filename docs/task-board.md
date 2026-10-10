@@ -7,7 +7,7 @@ Statuses use the levels in [state.md](state.md); "done" is not used.
 | Owner | Files |
 |---|---|
 | Teammate | **not yet recorded** — no assignment has been confirmed. Before editing, agree on files here. |
-| Claude (integration/review) | everything currently under `quote_gate/`, `tests/`, `scripts/`, `db/`, `docs/`, `paper/` |
+| Codex (sole implementation agent) | `quote_gate/`, `tests/`, `scripts/`, `db/`, `docs/`, `paper/`; ownership transferred by the human handoff; Claude has stopped editing |
 | Hermes (delegated, reviewed) | none owned; delegated test files are listed below after acceptance |
 
 To avoid overlapping editors: claim a file in this table (via a commit) before changing it.
