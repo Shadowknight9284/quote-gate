@@ -234,6 +234,12 @@ class LiveLoopback(unittest.IsolatedAsyncioTestCase):
         await self.agg.stop()
         await self.v.stop()
 
+    async def quiesce(self):
+        """Stop new decisions and wait until no order is pending, so the venue/ledger comparison is
+        taken at a quiescent point (otherwise a just-filled order may have its exec in flight)."""
+        self.agg.quote_listener = None
+        await wait_until(lambda: not self.r.pending)
+
     def check_agreement(self):
         rec = venue_reconciliation(self.r, self.v)
         self.assertEqual((rec["ledger_not_at_venue"], rec["mismatched"]), (0, 0))
@@ -248,7 +254,8 @@ class LiveLoopback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.r.c.invalid_response, {})
         self.assertEqual(self.r.c.timeouts, 0)
         self.assertGreater(self.r.exec_rtt_ns.count, 0)
-        self.check_agreement()
+        await self.quiesce()
+        self.assertEqual(self.check_agreement()["unbooked_venue_fills"], 0)
 
     async def test_dropped_ack_after_fill_recovered_by_status(self):
         self.v.drop_next_acks = 1
@@ -258,13 +265,16 @@ class LiveLoopback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.r.reconcile_ns.count, 1)
         self.assertEqual(self.v.orders_executed, len(self.v.fill_log))
         await wait_until(lambda: self.r.c.filled >= 5)
-        self.check_agreement()
+        await self.quiesce()
+        rec = self.check_agreement()
+        self.assertEqual(rec["unbooked_venue_fills"], 0)
 
     async def test_disconnect_after_execution_before_ack(self):
         self.v.disconnect_after_exec = 1
         await self.agg.start()
         await wait_until(lambda: self.r.c.unknown_disconnect == 1 and self.r.c.resolved_by_status == 1)
         self.assertEqual(self.agg.connects["A"], 2)
+        await self.quiesce()
         rec = self.check_agreement()
         self.assertEqual(rec["unbooked_venue_fills"], 0)
 

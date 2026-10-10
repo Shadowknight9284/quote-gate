@@ -18,3 +18,12 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   1 ms; stop returns. Regression tests `tests/test_reconnect_ping.py::StopAndFairness` fail on the
   pre-fix aggregator (1 failure, 1 error) and pass after.
 - Also closed two unclosed files in `tests/test_integration_local.py` (ResourceWarning).
+
+## 2026-10-10T18:10Z — CI-exposed test race fixed (`9ffa86e` → next)
+- CI on `9ffa86e`: pull_request run success; push run failed
+  `test_disconnect_after_execution_before_ack` (`unbooked_venue_fills 1 != 0`): after reconciliation
+  trading resumed and a new order's exec was still in flight at the snapshot. Product invariant
+  (unbooked fills all belong to unresolved orders) held. Test now quiesces (stops decisions, waits
+  until nothing is pending) before asserting exact agreement; the `== 0` assertion is kept and added
+  to two more live tests.
+- Stress: 6 concurrent suites x 3 rounds (18/18 OK); 4 suites pinned to one CPU x 2 rounds (8/8 OK).
