@@ -76,3 +76,8 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   added `AGENTS.md` (agent entry point) and `docs/handoff.md` (in-flight H4 review procedure,
   ready tasks N1–N3 with contracts, decisions reserved for humans); submission draft updated.
 - Hermes H4 (tests only, `tests/test_l2book_hermes.py`) launched 18:27Z, baseline `1b96b03`.
+
+## 2026-10-10T18:40Z — PR #3 merged; Hermes H4 accepted (PR #4)
+- PR #3 merged at `8c1d598` → `bce39da`; CI on main: success.
+- H4: only the allowed file returned; 10/10 tests pass; 6/6 mutants killed. Opened as PR #4 for human
+  merge (merge authority in this session covered PRs #1–#3 only).

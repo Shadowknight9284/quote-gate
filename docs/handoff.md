@@ -4,19 +4,9 @@ Main: PR #1 (baseline) and PR #2 (Coinbase real-data, audited) merged; CI green 
 PR #3 (this docs set + submission draft) is the docs PR. Read `AGENTS.md` first.
 
 ## In flight
-### H4 — Hermes: L2 book edge-case tests (launched 18:27Z)
-- Workspace: `qg-tasks/H4-l2book-tests` on the delegation VM, baseline `1b96b03`; allowed file
-  `tests/test_l2book_hermes.py`; task text in that workspace's `TASK.md` (10 listed cases).
-- Review procedure (any agent can do this):
-  1. `tools/hermes_task.sh fetch H4-l2book-tests artifacts/delegation` (needs the gitignored
-     `docs/private/remote.env`; otherwise skip and mark H4 abandoned).
-  2. Reject if the patch touches any path other than `tests/test_l2book_hermes.py`.
-  3. Apply in a scratch copy; run `python3 -m unittest tests.test_l2book_hermes -v`.
-     A failing test is either a real defect (reproduce it by hand) or a wrong test (drop it).
-  4. Mutation check: in a scratch copy, break `l2book.py` (e.g. make zero size not delete; make
-     `apply_batch` apply changes before validating all; drop the crossed-book check) and require the
-     accepted tests to fail. Keep only tests that assert the contract.
-  5. Record the outcome in `docs/delegation-log.md` and `docs/task-board.md`.
+Nothing. H4 (Hermes, L2 book edge-case tests) was accepted: 10/10 tests, 6/6 mutants killed;
+see `docs/delegation-log.md`. Use the same procedure (path check, scratch apply, mutation check)
+for any future delegated task.
 
 ## Ready tasks (each small, contract-first; good for a delegated agent)
 | ID | Task | Allowed files | Acceptance |

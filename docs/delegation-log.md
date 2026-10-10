@@ -62,3 +62,10 @@ This is not a clean bill of health and not a security audit result.
   `orders_executed` treated as units instead of an order count). No defect reproduced; the same
   behaviours are covered with contract-correct assertions in `tests/test_live_local.py` (passing).
 - The 1 passing test duplicates existing coverage. Patch not applied; no repair spent.
+
+## H4 L2 book edge-case tests (Hermes) — accepted (10/10), 0 repairs
+- Contract: "Book reconstruction" in `docs/contracts/R1-coinbase.md`; allowed file
+  `tests/test_l2book_hermes.py` (respected; no extra files). Baseline `1b96b03`; budget 240 s, 25 turns.
+- Local run: 10/10 pass. Mutation check: 6/6 mutants of `l2book.py` killed (zero size not deleting,
+  non-atomic batch, invalid state keeping levels, delete_absent / ignored-update counters not
+  incremented, best bid computed as min). Accepted with a provenance docstring.
