@@ -36,8 +36,10 @@ Synthetic data for the controlled experiment; no real money or real orders anywh
 - Two defects found by CI and fixed: a flooding client could starve the feed; shutdown could hang
   with an open client.
 - Tiger Data: 3 runs imported; database percentiles equal local recomputation to 0 ns.
-- Real-data extension (PR #2, under review): Coinbase BTC-USD public L2 capture, deterministic
-  replay, hypothetical execution; fees dominate the outcome.
+- Real-data extension (merged, audited): Coinbase BTC-USD public `level2_batch` capture (600 s),
+  deterministic replay with hypothetical execution. 227 of 1798 orders filled (the rest exceeded
+  displayed size); pre-fee −$0.02, with a hypothetical 10 bp fee −$94.67 — fees dominate.
+  One 10-minute sample; not a finding.
 
 ## How we built it
 Python 3.12 standard library (asyncio), integer ticks throughout, unittest + GitHub Actions CI,
@@ -52,4 +54,5 @@ one physical host. Nothing here claims real-market alpha or production readiness
 
 ## Links
 Paper: `paper/quotegate.tex` · Demo: `scripts/demo.sh`, `docs/demo-transcript.txt` ·
-Architecture: `docs/architecture.md` · Evidence: `docs/state.md`
+Architecture: `docs/architecture.md` · Evidence: `docs/state.md` · Real data: `docs/realdata.md` ·
+Agents: `AGENTS.md`, `docs/handoff.md`. Tests: `python3 -m unittest discover -s tests -t .` (CI).

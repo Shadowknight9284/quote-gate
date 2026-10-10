@@ -7,4 +7,5 @@
 - Delegation to Hermes: `tools/hermes_task.sh`; contracts in `docs/contracts/`; patches reviewed before apply, max two repairs.
 - Do not claim sponsor endorsement, production readiness, exchange-grade latency, or physical-host fault tolerance.
 - Keep private host details in `docs/private/` (gitignored), not in public docs.
-- Teammate-owned files: TBD — do not delegate or edit them without coordination.
+- Teammate-owned files: not recorded (see docs/task-board.md) — coordinate before editing.
+- Agent entry point: AGENTS.md; open work: docs/handoff.md.

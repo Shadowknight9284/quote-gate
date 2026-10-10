@@ -22,6 +22,7 @@ To avoid overlapping editors: claim a file in this table (via a commit) before c
 | Q1 | Quant slice + deterministic backtest + 5-cell matrix | Claude | tested locally |
 | C1 | Networked order path, loopback, one execution venue | Claude | tested locally (loopback) |
 | C2 | Second execution venue in live runner | — | planned (deferred) |
+| R1 | Coinbase BTC-USD capture/replay (hypothetical execution) | Claude | merged after audit (PR #2) |
 | C3 | Order path with venue on second VM (normal + dropped-ack) | Claude | tested across VMs (one run each) |
 | P1 | Two-page paper | Claude | implemented (compiles); citations need human check |
 | E1 | Tiger Data schema/queries/importer | Claude | safeguards tested without DB; read-only check run; schema/import awaiting approval |
@@ -34,6 +35,7 @@ To avoid overlapping editors: claim a file in this table (via a commit) before c
 | T3 | Artifact normalizer | rejected after 2 repairs | none (Claude wrote `normalize.py`) |
 | A1 | Audit of validation/freshness/reconnect/ping | no confirmed defects; patch rejected | none |
 | H1 | Ledger regression tests | partially accepted (13 kept, 1 rejected, 2 out-of-scope files discarded) | `tests/test_ledger_hermes.py` |
+| H4 | L2 book edge-case tests | in flight (see docs/handoff.md) | — |
 | H2 | Order idempotency regression tests | rejected (7/8 tests asserted non-contract frames); no defects confirmed | none |
 
 Details: [delegation-log.md](delegation-log.md).

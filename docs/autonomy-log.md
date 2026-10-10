@@ -69,3 +69,10 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   tests that fail on the pre-audit code. Fixed in scope; strategy and lot size unchanged.
 - Re-replay of capture 835e07e9… with audited code: twice, identical hashes (report ec2cda5f…,
   normalized 285db8b6… unchanged). Units/notional/fee identities reconcile exactly in all scenarios.
+
+## 2026-10-10T18:30Z — PR #2 merged; agent handoff docs; Hermes H4 launched
+- PR #2 merged at audited head `136f2b9` → `9ea2042`; CI on the merge commit: success.
+- PR #3 branch updated with `main` (autonomy-log conflict resolved by keeping all entries);
+  added `AGENTS.md` (agent entry point) and `docs/handoff.md` (in-flight H4 review procedure,
+  ready tasks N1–N3 with contracts, decisions reserved for humans); submission draft updated.
+- Hermes H4 (tests only, `tests/test_l2book_hermes.py`) launched 18:27Z, baseline `1b96b03`.
