@@ -4,8 +4,9 @@ Four separate things live in this repository. Only B is a running system.
 
 ## A. Deterministic in-process quant experiment (the controlled reference)
 `market_sim` → `backtest` (Book, Strategy, router, `SimVenue`, Ledger) → `experiments` → paper.
-One process, no sockets, no clocks: time is the step index. Same seed ⇒ identical event stream in
-every configuration; faults/execution use a separate RNG. Used for every number in the paper.
+One process, no sockets, no clocks: time is the step index. Same seed ⇒ the same random draws in
+every configuration (identical quote stream within a regime; price moves depend on β, so null and
+controlled streams differ); faults/execution use a separate RNG. Used for every number in the paper.
 
 ## B. Networked runtime (what actually runs over TCP)
 ```
