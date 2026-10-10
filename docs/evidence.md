@@ -31,6 +31,16 @@ Routing never reads the database; core tests and demo run without it.
 same artifacts adds no rows. One transaction per run; after insert, per-table counts for the run
 must equal the source counts or the transaction rolls back and the run is reported FAILED.
 
+## Open before any database write
+- Conflict detection: `ON CONFLICT DO NOTHING` alone would silently keep an old row if a key were
+  reused with different content. The importer must compare existing rows for the run's keys and
+  fail on any difference before inserting. Not yet implemented.
+- Pre-existing object validation: before `create_hypertable`, verify any existing
+  `quotegate.*` table has exactly the expected columns/types/constraints; stop otherwise.
+  `CREATE TABLE IF NOT EXISTS` is not validation. Not yet implemented.
+- Remote feed RTT is summary-only (M3); no per-sample remote timeline or time-bucketed chart may
+  be produced from it.
+
 ## Verification
 `verify-local` recomputes client percentiles from normalized samples (nearest rank, same as
 SQL `percentile_disc`) and compares to recorded summaries; tolerance 50 ns because summaries are

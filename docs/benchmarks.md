@@ -69,7 +69,9 @@ Fault run (`scripts/m4_faults.sh`): 2000 req/s for 30 s, 8 connections, 1 trial;
 injection: 20 × SIGSTOP venue A for 300 ms, then kill venue B, restart after 1.5 s.
 - 60 000 offered / 60 000 completed / 0 errors / 0 backlog.
 - Freshness violations (server-reported quote age ≥ 100 ms on a routed reply): 0 of 60 000.
-  Self-reported by the aggregator; not an independent check.
+  This is an internal-consistency observation (the aggregator reports on its own decision), not
+  independent proof of freshness correctness. Independent evidence is the injected-clock rule tests
+  (`tests/test_book_router.py`), kept separate.
 - Stale-detection delay (monitor observation − (receipt + 100 ms)), n = 20: min 48 µs,
   p50 0.44–0.48 ms, max 1.08 ms. Bounded by the 1 ms monitor tick plus asyncio timer
   granularity. n = 20 does not support a p99. The routing decision itself evaluates freshness
