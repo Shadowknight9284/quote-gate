@@ -207,36 +207,53 @@ def run(mcfg: MarketConfig, pcfg: PolicyConfig, xcfg: ExecConfig) -> Result:
             last = (qa, eq)
         else:
             res.marks_missing += 1
-    # End of run: report open inventory and unrealized P&L; hypothetical liquidation is labelled.
+    # End of run. Two ledgers are reported:
+    #  - strategy-known: fills the strategy has confirmed (acks/reconciliation);
+    #  - evaluator-authoritative: replay of every FILLED record held by the venues (evaluator-only;
+    #    never shown to the strategy). The difference is attributable to unresolved outcomes.
+    # Terminal valuation is HYPOTHETICAL: open inventory valued at the last fresh reference executable
+    # price (bid if long, ask if short), minus a hypothetical fee for that liquidation. No trade occurs.
     qa = last[0] if last else None
-    mark = led.mark_price(qa.bid_ticks, qa.ask_ticks) if qa else None
-    eq = led.equity_ticks(mark)
-    liq_fee = xcfg.fee_per_unit * abs(led.position)
-    # Venue record vs ledger after reconciliation: every venue fill must be booked exactly once,
-    # except fills whose outcome is still UNKNOWN at the end (reported, never invented).
     venue_fills = {r["fill"].fill_id: r["fill"] for v in venues.values()
                    for _, r in v.orders.values() if r["status"] == "FILLED"}
     unbooked = [f for fid, f in venue_fills.items() if fid not in led.fills]
     phantom = [fid for fid in led.fills if fid not in venue_fills]
     mismatched = [fid for fid, f in led.fills.items() if fid in venue_fills and venue_fills[fid] != f]
     unresolved_ids = set(strat.halted_unknown) | ({strat.outstanding} if strat.outstanding else set())
+    auth = Ledger(pcfg.q_max)
+    for f in sorted(venue_fills.values(), key=lambda f: (f.step, f.fill_id)):
+        auth.apply(f)
+
+    def terminal(l):
+        mark = l.mark_price(qa.bid_ticks, qa.ask_ticks) if qa else None
+        eq = l.equity_ticks(mark)
+        liq_fee = xcfg.fee_per_unit * abs(l.position)
+        return {"position": l.position, "cash_ticks": l.cash_ticks, "fees_ticks": l.fees_ticks,
+                "realized_gross_ticks": l.realized_gross_ticks,
+                "unrealized_ticks": None if mark is None else l.unrealized_ticks(mark),
+                "mark_ticks": mark, "mark_source": "last fresh A executable price (hypothetical)"
+                if mark is not None else "MISSING",
+                "hypothetical_liquidation_fee_ticks": liq_fee,
+                "post_fee_terminal_liquidation_value_pnl": None if eq is None else eq - liq_fee,
+                "pre_fee_terminal_liquidation_value_pnl": None if eq is None else eq + l.fees_ticks}
+
+    known, authoritative = terminal(led), terminal(auth)
     res.reconciliation = {
         "venue_fills": len(venue_fills), "ledger_fills": len(led.fills),
         "unbooked_venue_fills": len(unbooked),
         "unbooked_all_unresolved": all(f.order_id in unresolved_ids for f in unbooked),
         "unbooked_signed_qty": sum(f.signed_qty for f in unbooked),
-        "ledger_fills_not_at_venue": len(phantom), "mismatched": len(mismatched)}
-    res.final = {
-        "position": led.position, "cash_ticks": led.cash_ticks, "fees_ticks": led.fees_ticks,
-        "realized_gross_ticks": led.realized_gross_ticks,
-        "unrealized_ticks": None if mark is None else led.unrealized_ticks(mark),
-        "mark_ticks": mark, "mark_source": "last fresh A executable price" if mark is not None else "MISSING",
-        "equity_marked_ticks": eq,
-        "net_if_liquidated_ticks": None if eq is None else eq - liq_fee,
-        "gross_if_liquidated_ticks": None if eq is None else eq + led.fees_ticks,
-        "halted_unknown_at_end": len(strat.halted_unknown),
-        "outstanding_at_end": strat.outstanding is not None,
-        "liquidation_fee_ticks": liq_fee,
-    }
+        "ledger_fills_not_at_venue": len(phantom), "mismatched": len(mismatched),
+        "unresolved_orders_at_end": len(unresolved_ids),
+        "position_diff": authoritative["position"] - known["position"],
+        "cash_diff_ticks": authoritative["cash_ticks"] - known["cash_ticks"]}
+    res.final = {"strategy_known": known, "authoritative": authoritative,
+                 "halted_unknown_at_end": len(strat.halted_unknown),
+                 "outstanding_at_end": strat.outstanding is not None,
+                 # convenience aliases = authoritative (final economic evaluation)
+                 "position": authoritative["position"],
+                 "post_fee_terminal_liquidation_value_pnl": authoritative["post_fee_terminal_liquidation_value_pnl"],
+                 "pre_fee_terminal_liquidation_value_pnl": authoritative["pre_fee_terminal_liquidation_value_pnl"]}
     res.ledger = led
+    res.authoritative_ledger = auth
     return res

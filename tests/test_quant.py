@@ -204,7 +204,7 @@ class Backtest(unittest.TestCase):
 
     def test_no_trade_baseline(self):
         r = bt.run(self.M, self.P, bt.ExecConfig(trade=False))
-        self.assertEqual((r.fills, r.final["position"], r.final["equity_marked_ticks"]), (0, 0, 0))
+        self.assertEqual((r.fills, r.final["position"], r.final["post_fee_terminal_liquidation_value_pnl"]), (0, 0, 0))
 
     def test_unknown_outcomes_reconciled_without_invented_fills(self):
         r = bt.run(self.M, self.P, bt.ExecConfig(drop_ack_pct=50, fault_seed=1, ack_timeout_steps=3,
@@ -245,6 +245,8 @@ class Backtest(unittest.TestCase):
         self.assertEqual((rec["ledger_fills_not_at_venue"], rec["mismatched"]), (0, 0))
         self.assertTrue(rec["unbooked_all_unresolved"])
         self.assertEqual(rec["venue_fills"], rec["ledger_fills"] + rec["unbooked_venue_fills"])
+        self.assertEqual(rec["position_diff"], rec["unbooked_signed_qty"])
+        self.assertEqual(r.authoritative_ledger.position, r.ledger.position + rec["unbooked_signed_qty"])
 
     def test_stale_reference_blocks_orders(self):
         r = bt.run(self.M, self.P, bt.ExecConfig(outage_every=100, outage_len=50, stale_after_ns=15_000_000))

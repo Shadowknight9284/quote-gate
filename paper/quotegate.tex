@@ -71,9 +71,10 @@ are no-ops and conflicting reuse is rejected.
 Thirty unseen seeds (101--130), 5{,}000 steps each, fee $f=1$ tick per unit (1 tick $=0.01$ currency
 units, declared). Cells: (1) no trading; (2) null; (3) controlled; (4) controlled with a 2-step
 execution delay and 1-step acknowledgement delay; (5) controlled with faults (A's feed silent 50 of
-every 500 steps; 5\% of acknowledgements lost). \emph{Net} P\&L is cash plus open inventory valued at
-the last fresh A executable price (bid if long, ask if short) minus a hypothetical liquidation fee;
-\emph{gross} = net + all fees. Values are per-seed means $\pm$ sample standard deviation over 30 seeds,
+every 500 steps; 5\% of acknowledgements lost). Economics use the evaluator-authoritative ledger rebuilt from venue fill records (never shown to the
+strategy). \emph{Net} is the post-fee terminal liquidation-value P\&L: cash plus open inventory valued at
+the last fresh A executable price (bid if long, ask if short) minus a fee for that \emph{hypothetical}
+liquidation (no trade occurs); \emph{gross} (pre-fee) = net + all fees. Values are per-seed means $\pm$ sample standard deviation over 30 seeds,
 in ticks$\times$units. The \emph{hit rate} is the share of steps with $|I_t|>\theta$ and a price move
 where $\operatorname{sign}(I_t)=\operatorname{sign}(p_{t+1}-p_t)$ (49{,}431 such steps); it is computed by the
 evaluator and is directional accuracy, not profitability.
@@ -86,8 +87,8 @@ Cell & Fills & Turnover & Gross & Net & Gross/unit & Hit \\
 1 no trade   & 0     & 0      & 0                 & 0                  & --      & .502 \\
 2 null       & 3317  & 16586  & $-8974\pm198$     & $-25563\pm293$     & $-0.54$ & .502 \\
 3 controlled & 3317  & 16586  & $-7382\pm209$     & $-23971\pm308$     & $-0.45$ & .633 \\
-4 + delay    & 693   & 3462   & $-1846\pm152$     & $-5311\pm171$      & $-0.53$ & .633 \\
-5 + faults   & 2008  & 10042  & $-4430\pm283$     & $-14475\pm583$     & $-0.44$ & .633 \\
+4 + delay    & 693   & 3463   & $-1846\pm152$     & $-5311\pm171$      & $-0.53$ & .633 \\
+5 + faults   & 2009  & 10043  & $-4430\pm281$     & $-14476\pm582$     & $-0.44$ & .633 \\
 \bottomrule
 \end{tabular}}
 \caption{Per-seed means (fills, turnover in units). Gross/unit = gross / turnover.}
@@ -118,13 +119,15 @@ because fewer orders fill (1109 sent per seed, 37.5\% rejected, mostly because t
 the 2-step delay exceeds the 1-step signal horizon and loss per unit traded worsens. Lower losses
 are not better execution. Under faults the policy held through 449 stale steps and halted for 1004
 steps on 100 unknown outcomes per seed; after reconciliation every venue fill was booked exactly
-once except 11 fills (8 still unknown, others with acknowledgements in flight) at run end, which are
-reported, not invented; 21 of 30 seeds end with open inventory, valued as above.
+once except 11 fills belonging to orders unresolved at run end (8 unknown, the rest with
+acknowledgements in flight): the strategy-known ledger then differs from the authoritative one on
+11 seeds (total net difference 20 ticks), and results use the authoritative ledger. 21 of 30 seeds end
+with open inventory, valued hypothetically as above.
 
 \section{Limitations}
 Results hold only for this synthetic model, these frozen parameters and these 30 seeds; they are not
 a general impossibility result and not evidence of real-market alpha. Fills ignore queues, impact and
-partial fills; the in-process backtest has not yet been run over the networked venue transport;
+partial fills; these results come from the in-process backtest, not from the networked venue transport;
 measured system latencies (feed and route round trips) are separate from the simulated delays here.
 
 {\footnotesize

@@ -2,9 +2,10 @@
 
   python3 -m quote_gate.experiments [--out artifacts/quant]
 
-Units: ticks x quantity units (1 tick = 0.01 currency, declared). Gross = net + fees paid.
-"Net if liquidated" marks open inventory at the last fresh reference-venue executable price and
-subtracts the liquidation fee; it is hypothetical (ignores displayed size at that moment).
+Units: ticks x quantity units (1 tick = 0.01 currency, declared).
+Economics use the evaluator-authoritative ledger (replay of venue fill records). "post-fee terminal
+liquidation-value P&L" values open inventory at the last fresh reference executable price minus a
+hypothetical liquidation fee; "pre-fee" adds back all fees. No liquidation trade occurs.
 """
 from __future__ import annotations
 
@@ -49,10 +50,15 @@ def run_cell(name, beta_pct, xcfg):
         x = ExecConfig(**{**asdict(xcfg), "fault_seed": seed + 10_000})
         r = run(m, POLICY, x)
         f = r.final
-        per_seed.append({"seed": seed, "fills": r.fills, "turnover": r.turnover,
-                         "fees": f["fees_ticks"], "gross": f["gross_if_liquidated_ticks"],
-                         "net": f["net_if_liquidated_ticks"], "realized_gross": f["realized_gross_ticks"],
-                         "open_position": f["position"], "unrealized": f["unrealized_ticks"],
+        a, k = f["authoritative"], f["strategy_known"]
+        per_seed.append({"seed": seed, "fills": len(r.authoritative_ledger.fills),
+                         "turnover": sum(abs(x.signed_qty) for x in r.authoritative_ledger.fills.values()),
+                         "fees": a["fees_ticks"], "gross": a["pre_fee_terminal_liquidation_value_pnl"],
+                         "net": a["post_fee_terminal_liquidation_value_pnl"],
+                         "known_gross": k["pre_fee_terminal_liquidation_value_pnl"],
+                         "known_net": k["post_fee_terminal_liquidation_value_pnl"],
+                         "realized_gross": a["realized_gross_ticks"],
+                         "open_position": a["position"], "unrealized": a["unrealized_ticks"],
                          "spread_cost_halfticks": r.spread_cost_halfticks,
                          "max_abs_position": r.max_abs_position, "max_drawdown": r.max_drawdown_ticks,
                          "marks_missing": r.marks_missing, "rejections": r.rejections,
@@ -60,7 +66,7 @@ def run_cell(name, beta_pct, xcfg):
                          "halted_unknown_at_end": f["halted_unknown_at_end"],
                          "decisions": r.decisions, "hit": r.hit, "hit_n": r.hit_n,
                          "orders_sent": r.orders_sent, "reconciliation": r.reconciliation,
-                         "liquidation_fee": f["liquidation_fee_ticks"]})
+                         "liquidation_fee": a["hypothetical_liquidation_fee_ticks"]})
     agg = {k: _stats([s[k] for s in per_seed]) for k in
            ("fills", "turnover", "fees", "gross", "net", "spread_cost_halfticks", "max_abs_position",
             "max_drawdown", "unknown", "marks_missing")}
@@ -84,7 +90,9 @@ def run_cell(name, beta_pct, xcfg):
         "unbooked_all_unresolved": all(s["reconciliation"]["unbooked_all_unresolved"] for s in per_seed),
         "ledger_fills_not_at_venue": sum(s["reconciliation"]["ledger_fills_not_at_venue"] for s in per_seed),
         "mismatched": sum(s["reconciliation"]["mismatched"] for s in per_seed),
-        "halted_unknown_at_end": sum(s["halted_unknown_at_end"] for s in per_seed)}
+        "halted_unknown_at_end": sum(s["halted_unknown_at_end"] for s in per_seed),
+        "position_diff_seeds": sum(1 for s in per_seed if s["reconciliation"]["position_diff"]),
+        "known_minus_auth_net_total": sum((s["known_net"] or 0) - (s["net"] or 0) for s in per_seed)}
     return {"cell": name, "beta_pct": beta_pct, "exec": asdict(xcfg), "aggregate": agg, "per_seed": per_seed}
 
 
