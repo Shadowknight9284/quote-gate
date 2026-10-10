@@ -37,6 +37,14 @@ python3 -m quote_gate.live --steps 2000             # networked loopback slice (
 Market-data demo (three processes on 127.0.0.1): see [docs/demo.md](docs/demo.md).
 Paper: `cd paper && latexmk -pdf quotegate.tex` (needs a TeX Live install with pgfplots).
 
+## Optional: real market data (Coinbase BTC-USD, read-only)
+Not needed for the quick start. Public `level2_batch` feed, no account or key; execution is
+hypothetical. See [docs/realdata.md](docs/realdata.md).
+```
+python3 -m quote_gate.coinbase_capture --out artifacts/realdata/run1 --seconds 600 --max-mib 250
+python3 -m quote_gate.coinbase_replay --capture artifacts/realdata/run1
+```
+
 ## Documentation
 - [docs/architecture.md](docs/architecture.md) — runtime vs experiment vs analytics vs dev workflow; flows; limits
 - [docs/state.md](docs/state.md) — feature status by verification level; claim → evidence table

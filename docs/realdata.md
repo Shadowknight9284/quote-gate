@@ -43,18 +43,38 @@ Metadata, ingestion statistics and the hypothetical report are committed in
   absent levels (counted, not errors), 0 invalid intervals; 9 356 top-of-book events. The single
   counted invalidation is the end-of-capture disconnect. Replay run twice: byte-identical
   `normalized.jsonl`, `ingestion.json`, `report.json`.
-- Hypothetical execution (real market observations with hypothetical execution):
+- Hypothetical execution (real market observations with hypothetical execution), audited replay:
 
-| Scenario | Orders | Filled | Rejected | Fees (USD) | Pre-fee P&L (USD) | Post-fee P&L (USD) |
-|---|---|---|---|---|---|---|
-| fee 0, delay 0 | 1798 | 227 | 1571 insufficient size | 0 | −0.02 | −0.02 |
-| fee 10 bp, delay 0 | 1798 | 227 | 1571 insufficient size | 94.23 | −0.02 | −94.67 |
-| fee 10 bp, delay 1 event | 1955 | 267 | 1641 size, 47 price moved | 110.83 | −0.07 | −111.32 |
+| Scenario | Orders | Filled | Rejected | Turnover | Notional | Fees paid | Pre-fee P&L | Post-fee P&L |
+|---|---|---|---|---|---|---|---|---|
+| fee 0, delay 0 | 1798 | 227 | 1571 size | 1.135 BTC | $94,229.22 | $0 | −$0.02025 | −$0.02025 |
+| fee 10 bp, delay 0 | 1798 | 227 | 1571 size | 1.135 BTC | $94,229.22 | $94.23018 | −$0.02025 | −$94.66557 |
+| fee 10 bp, delay 1 event | 1955 | 267 | 1641 size, 47 price moved | 1.335 BTC | $110,833.61 | $110.83479 | −$0.07045 | −$111.32038 |
 
-  P&L is terminal liquidation value (hypothetical; open inventory −5 lots valued at the last valid top).
-  Most orders were rejected because the displayed top-of-book size was below 0.005 BTC.
-  Evaluator-only hit rate (sign of imbalance > θ vs next mid change): 0.598 over 204 mid changes —
-  one 10-minute sample; not a finding. With any hypothetical fee the result is dominated by fees.
+  Reconciliation (exact, every scenario): pre-fee = realized + unrealized at the mark;
+  pre-fee − post-fee = fees paid + hypothetical liquidation fee ($0.41514 at 10 bp). Fees are rounded
+  up per fill in 1e-5 USD (excess over bp × notional: $0.00096 for 227 fills). Terminal inventory:
+  −0.005 BTC, valued at the ask $83,027.32 of local event 9955, session 1 (hypothetical; no trade).
+  First size rejection: sell 0.005 BTC (500 000 units) vs displayed bid 0.0046 BTC (460 000 units)
+  at $83,042.45. BTC-USD's 1-cent spread is ~0.0012 bp, so spread cost is tiny; hypothetical fees
+  dominate. Evaluator-only hit rate (imbalance > θ at the event just before a mid change vs that
+  change): 0.685, n = 200 — one 10-minute sample; not a finding; directional accuracy is not P&L.
+
+## Audit (2026-10-10) — findings fixed before merge
+- F1 (defect): an order delayed past a session end could fill in the next session. Now cancelled at
+  session end (`session_ended`); test fails on the old code.
+- F2 (assumption, now explicit): displayed size is consumed only within the event of our fill and is
+  restored from the next event — our fills never deplete the real book (optimistic).
+- F3 (evaluator definition): hit rate used the imbalance at the previous mid change; now the latest
+  imbalance before the change (0.598 → 0.685 on this capture; P&L unaffected).
+- F4: reports now include turnover, notional, per-fill fee range, unrealized P&L, a dated terminal
+  mark, and the hypothetical liquidation fee; the identities above are tested.
+- F5: zero-delay and delayed fills share one execution path.
+- WebSocket client now rejects RSV/extension bits, data frames inside a fragmented message,
+  fragmented or >125-byte control frames, unknown opcodes and invalid UTF-8 (5 cases the old client
+  mishandled); 12 tests with in-memory streams, including partial reads and TLS-verification checks.
+- Freshness: decisions occur after a whole batch is applied; freshness is the local receipt age of
+  the last applied book message (all batches, not only top changes); heartbeats never count.
 
 ## Limitations
 - One product, one short capture; not a general result and not evidence of profitability.

@@ -91,21 +91,56 @@ def normalize(capture_dir: str) -> tuple[list, dict]:
 
 
 def replay(events: list, fee_bp: int, delay_events: int, policy=PolicyConfig()) -> dict:
-    """Frozen policy over the normalized events with hypothetical IOC execution (contract R1)."""
+    """Frozen policy over the normalized events with hypothetical IOC execution (contract R1).
+
+    Per top-of-book event (emitted after a WHOLE batch/snapshot is applied), in order:
+      1. deliver the quote to the aggregator Book (freshness = local receipt age of the last applied
+         book message; heartbeats never count);
+      2. orders whose arrival event is this one are matched against this event's top;
+      3. the strategy decides on this event (only if the reference is FRESH);
+      4. a new order with delay 0 is matched against this same observation (zero-latency assumption);
+         with delay d it arrives d events later (never earlier, never on a later session).
+    Liquidity: displayed top size is consumed only by our fills within the same event and is restored
+    from the next event's displayed size (optimistic: our fills never deplete the real book).
+    Session end: orders still pending are cancelled ("session_ended"); the venue is DISCONNECTED until
+    the next session's snapshot; nothing from a dead session can fill later.
+    """
     book = Book(SYMBOL, [VENUE], STALE_NS)
     strat, led = Strategy(policy), Ledger(policy.q_max)
-    epoch, seq, step = None, 0, 0
+    epoch, seq, step, n = None, 0, 0, 0
     pending: list = []                 # (arrive_step, order dict)
     remaining = {Side.BUY: 0, Side.SELL: 0}
-    cur = None
-    last_valid = None                  # last valid top seen (kept across session ends for terminal mark)
+    last_valid = None                  # last valid top (used ONLY for the dated terminal valuation)
     out = {"decisions": {}, "orders": 0, "filled": 0, "rejected": {}, "max_abs_position": 0,
-           "hit": 0, "hit_n": 0, "equity_marks": 0, "max_drawdown_1e5usd": 0}
-    peak, prev_imb_mid = 0, None
-    n = 0
+           "hit": 0, "hit_n": 0, "equity_marks": 0}
+    fills = []                         # (step, signed_lots, price_ticks, fee) for the audit
+    peak, dd, prev_mid2, prev_imb = 0, 0, None, None
 
     def fee_for(price_ticks, lots):
         return 0 if fee_bp == 0 else math.ceil(price_ticks * lots * fee_bp / 10000)   # 1e-5 USD, ceil
+
+    def reject(o, why, q=None):
+        out["rejected"][why] = out["rejected"].get(why, 0) + 1
+        if why == "insufficient_quantity" and "first_size_rejection" not in out and q is not None:
+            disp = q.ask_quantity if o["side"] is Side.BUY else q.bid_quantity
+            out["first_size_rejection"] = {
+                "step": step, "side": o["side"].value, "order_lots": o["lots"],
+                "order_btc": str(Decimal(o["lots"]) / 1000), "order_units": o["lots"] * LOT_UNITS,
+                "displayed_units": disp, "displayed_btc": str(Decimal(disp) / 10**8),
+                "price_usd": str(Decimal(q.ask_ticks if o["side"] is Side.BUY else q.bid_ticks) / 100)}
+        strat.on_resolved(o["id"], 0, step)
+
+    def execute(o, q):
+        status, price, why = match(o["side"], o["lots"] * LOT_UNITS, o["limit"], q, remaining)
+        if status != "FILLED":
+            return reject(o, why, q)
+        remaining[o["side"]] -= o["lots"] * LOT_UNITS
+        signed = o["lots"] if o["side"] is Side.BUY else -o["lots"]
+        fee = fee_for(price, o["lots"])
+        led.apply(Fill(f"f-{o['id']}", o["id"], VENUE, signed, price, fee, o["decision"], step))
+        fills.append((step, signed, price, fee))
+        out["filled"] += 1
+        strat.on_resolved(o["id"], signed, step)
 
     for e in events:
         if e["kind"] == "session_start":
@@ -113,40 +148,28 @@ def replay(events: list, fee_bp: int, delay_events: int, policy=PolicyConfig()) 
             continue
         if e["kind"] == "session_end":
             book.on_disconnect(VENUE, epoch)
-            cur = None
+            for _, o in pending:
+                reject(o, "session_ended")
+            pending.clear()
+            prev_mid2 = prev_imb = None                    # no evaluation pairs across sessions
             continue
         seq += 1
         step += 1
         q = Quote(VENUE, SYMBOL, seq, e["bid_ticks"], e["ask_ticks"], e["bid_units"], e["ask_units"])
         book.on_quote(VENUE, epoch, q, e["mono_ns"])
-        cur = last_valid = e
+        last_valid = e
         remaining = {Side.BUY: e["ask_units"], Side.SELL: e["bid_units"]}
+        # Evaluation-only: imbalance at the event immediately BEFORE a mid change vs that change's sign.
         mid2 = e["bid_ticks"] + e["ask_ticks"]
         imb = imbalance_bp(e["bid_units"], e["ask_units"])
-        # evaluation-only statistic: sign(imbalance at a mid change) vs sign of the NEXT mid change
-        if prev_imb_mid is not None and mid2 != prev_imb_mid[1]:
-            if abs(prev_imb_mid[0]) > policy.theta_bp:
-                out["hit_n"] += 1
-                out["hit"] += (prev_imb_mid[0] > 0) == (mid2 > prev_imb_mid[1])
-            prev_imb_mid = (imb, mid2)
-        elif prev_imb_mid is None:
-            prev_imb_mid = (imb, mid2)
-        # orders arriving now
-        for arrive, o in [p for p in pending if p[0] <= step]:
-            pending.remove((arrive, o))
-            status, price, reason = match(o["side"], o["lots"] * LOT_UNITS, o["limit"], q, remaining)
-            if status == "FILLED" and book.status(VENUE, e["mono_ns"]) is FeedStatus.FRESH:
-                remaining[o["side"]] -= o["lots"] * LOT_UNITS
-                signed = o["lots"] if o["side"] is Side.BUY else -o["lots"]
-                led.apply(Fill(f"f-{o['id']}", o["id"], VENUE, signed, price, fee_for(price, o["lots"]),
-                               o["decision"], step))
-                out["filled"] += 1
-                strat.on_resolved(o["id"], signed, step)
-            else:
-                r = reason or "stale_at_arrival"
-                out["rejected"][r] = out["rejected"].get(r, 0) + 1
-                strat.on_resolved(o["id"], 0, step)
-        # decision
+        if prev_mid2 is not None and mid2 != prev_mid2 and abs(prev_imb) > policy.theta_bp:
+            out["hit_n"] += 1
+            out["hit"] += (prev_imb > 0) == (mid2 > prev_mid2)
+        prev_mid2, prev_imb = mid2, imb
+        due = [p for p in pending if p[0] <= step]
+        for p in due:
+            pending.remove(p)
+            execute(p[1], q)
         reason, intent = strat.decide(reference_signal(book, VENUE, e["mono_ns"]), step)
         out["decisions"][reason] = out["decisions"].get(reason, 0) + 1
         if intent is not None:
@@ -155,42 +178,44 @@ def replay(events: list, fee_bp: int, delay_events: int, policy=PolicyConfig()) 
             o = {"id": f"r{n}", "side": intent.side, "lots": intent.qty, "limit": limit, "decision": step}
             strat.on_sent(o["id"])
             out["orders"] += 1
-            pending.append((step + delay_events, o))
-            if delay_events == 0:       # process immediately against the same observation
-                pending.remove((step, o))
-                status, price, rsn = match(o["side"], o["lots"] * LOT_UNITS, o["limit"], q, remaining)
-                if status == "FILLED":
-                    remaining[o["side"]] -= o["lots"] * LOT_UNITS
-                    signed = o["lots"] if o["side"] is Side.BUY else -o["lots"]
-                    led.apply(Fill(f"f-{o['id']}", o["id"], VENUE, signed, price, fee_for(price, o["lots"]),
-                                   step, step))
-                    out["filled"] += 1
-                    strat.on_resolved(o["id"], signed, step)
-                else:
-                    out["rejected"][rsn] = out["rejected"].get(rsn, 0) + 1
-                    strat.on_resolved(o["id"], 0, step)
+            if delay_events == 0:
+                execute(o, q)
+            else:
+                pending.append((step + delay_events, o))
         out["max_abs_position"] = max(out["max_abs_position"], abs(led.position))
-        mark = led.mark_price(e["bid_ticks"], e["ask_ticks"])
-        eq = led.equity_ticks(mark)
+        eq = led.equity_ticks(led.mark_price(e["bid_ticks"], e["ask_ticks"]))
         out["equity_marks"] += 1
         peak = max(peak, eq)
-        out["max_drawdown_1e5usd"] = max(out["max_drawdown_1e5usd"], peak - eq)
+        dd = max(dd, peak - eq)
     unresolved = len(pending)
-    last = last_valid
-    mark = led.mark_price(last["bid_ticks"], last["ask_ticks"]) if last else None
+    mark = led.mark_price(last_valid["bid_ticks"], last_valid["ask_ticks"]) if last_valid else None
     eq = led.equity_ticks(mark)
     liq_fee = fee_for(mark, abs(led.position)) if (mark and led.position) else 0
     usd = lambda v: None if v is None else str(Decimal(v) / Decimal(100000))      # 1e-5 USD -> USD
+    turnover_lots = sum(abs(f[1]) for f in fills)
+    notional = sum(abs(f[1]) * f[2] for f in fills)                                # 1e-5 USD
     out.update({
         "label": LABEL, "fee_bp_hypothetical": fee_bp, "delay_events": delay_events,
         "policy": {"theta_bp": policy.theta_bp, "q_max_lots": policy.q_max, "max_order_lots": policy.max_order_qty,
-                   "lot_btc": "0.001"},
+                   "lot_btc": "0.001", "q_max_btc": "0.005", "max_order_btc": "0.005"},
         "orders_unresolved_at_end": unresolved, "final_position_lots": led.position,
-        "fees_usd": usd(led.fees_ticks), "realized_pre_fee_usd": usd(led.realized_gross_ticks),
-        "terminal_mark": "last valid top (hypothetical liquidation; no trade)" if mark else "MISSING",
+        "final_position_btc": str(Decimal(led.position) / 1000),
+        "turnover_lots": turnover_lots, "turnover_btc": str(Decimal(turnover_lots) / 1000),
+        "notional_usd": usd(notional),
+        "fees_paid_usd": usd(led.fees_ticks), "fees_usd": usd(led.fees_ticks),
+        "fee_per_fill_usd": {"min": usd(min((f[3] for f in fills), default=0)),
+                             "max": usd(max((f[3] for f in fills), default=0))},
+        "realized_pre_fee_usd": usd(led.realized_gross_ticks),
+        "unrealized_at_mark_usd": usd(None if mark is None else led.unrealized_ticks(mark)),
+        "terminal_mark": None if mark is None else {
+            "price_usd": str(Decimal(mark) / 100), "side": "bid (long)" if led.position > 0 else "ask (short)"
+            if led.position < 0 else "n/a (flat)", "session": last_valid["session"],
+            "local_event_index": last_valid["i"], "local_mono_ns": last_valid["mono_ns"],
+            "note": "hypothetical liquidation at the last valid top before the capture ended; no trade"},
+        "hypothetical_liquidation_fee_usd": usd(liq_fee),
         "post_fee_terminal_liquidation_value_pnl_usd": usd(None if eq is None else eq - liq_fee),
         "pre_fee_terminal_liquidation_value_pnl_usd": usd(None if eq is None else eq + led.fees_ticks),
-        "max_drawdown_usd": usd(out.pop("max_drawdown_1e5usd")),
+        "max_drawdown_usd": usd(dd),
         "hit_rate": round(out["hit"] / out["hit_n"], 4) if out["hit_n"] else None,
     })
     return out
@@ -210,6 +235,11 @@ def run(capture_dir: str, out_dir: str) -> dict:
         json.dump(stats, f, indent=1)
     report = {"label": LABEL, "capture_sha256": stats["capture_sha256"],
               "normalized_sha256": stats["normalized_sha256"],
+              "replay_config": {"scenarios": [{"name": n_, "fee_bp": f_, "delay_events": d_} for n_, f_, d_ in SCENARIOS],
+                                "lot_units": LOT_UNITS, "lot_btc": "0.001", "stale_after_ns": STALE_NS,
+                                "policy": "PolicyConfig() frozen: theta 2000 bp, q_max 5, max order 5, cooldown 0",
+                                "fee_rounding": "ceil per fill, in 1e-5 USD",
+                                "price_unit": "0.01 USD/BTC tick; ledger price per lot in 1e-5 USD"},
               "scenarios": {name: replay(events, fee, delay) for name, fee, delay in SCENARIOS}}
     with open(os.path.join(out_dir, "report.json"), "w") as f:
         json.dump(report, f, indent=1, sort_keys=True)

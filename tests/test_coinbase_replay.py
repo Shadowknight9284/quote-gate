@@ -135,5 +135,60 @@ class Replay(unittest.TestCase):
         self.assertEqual(stats["book"]["updates_ignored_invalid"], 1)
 
 
+class AuditFindings(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def events(self, msgs):
+        write_capture(self.d, msgs)
+        return cr.normalize(self.d)[0]
+
+    def test_f1_delayed_order_never_fills_in_a_later_session(self):
+        strong_bid = snap([["100.00", "0.09"]], [["100.01", "0.01"]])
+        ev = self.events([(1, 0, strong_bid), (2, 100, strong_bid)])
+        r = cr.replay(ev, fee_bp=0, delay_events=1)
+        self.assertEqual((r["filled"], r["rejected"]), (0, {"session_ended": 2}))
+        self.assertEqual(r["final_position_lots"], 0)
+
+    def test_f2_liquidity_restored_from_next_event(self):
+        # ask/bid each 0.006 BTC; buy 5 lots, then sell 5, then buy 5 again: each fill sees the next
+        # event's displayed size (documented optimistic assumption).
+        ev = self.events([
+            (1, 0, snap([["100.00", "0.054"]], [["100.01", "0.006"]])),           # imb +0.8 -> buy
+            (1, 10, upd([["buy", "100.00", "0.006"], ["sell", "100.01", "0.054"]])),  # imb -0.8 -> sell 5
+            (1, 20, upd([["buy", "100.00", "0.054"], ["sell", "100.01", "0.006"]])),  # +0.8 -> buy 5
+        ])
+        r = cr.replay(ev, fee_bp=0, delay_events=0)
+        self.assertEqual((r["orders"], r["filled"], r["final_position_lots"]), (3, 3, 5))
+
+    def test_f3_hit_rate_uses_latest_imbalance_before_the_change(self):
+        ev = self.events([
+            (1, 0, snap([["100.00", "0.09"]], [["100.01", "0.01"]])),             # imb +0.8
+            (1, 10, upd([["buy", "100.00", "0.01"], ["sell", "100.01", "0.09"]])),   # imb -0.8, same mid
+            (1, 20, upd([["sell", "100.02", "0.05"], ["sell", "100.01", "0"], ["buy", "100.01", "0.05"]])),
+        ])                                                                          # mid moves up
+        r = cr.replay(ev, fee_bp=0, delay_events=0)
+        self.assertEqual((r["hit_n"], r["hit"]), (1, 0))      # latest imbalance (-0.8) predicted down
+
+    def test_f4_units_turnover_notional_and_fee_reconciliation(self):
+        write_capture(self.d, BASE)
+        ev = cr.normalize(self.d)[0]
+        r = cr.replay(ev, fee_bp=10, delay_events=0)
+        self.assertEqual((r["turnover_lots"], r["turnover_btc"]), (15, "0.015"))
+        self.assertEqual(r["notional_usd"], "1.50005")          # 5*100.01*0.001 + 2*5*100.00*0.001
+        self.assertEqual((r["fees_paid_usd"], r["hypothetical_liquidation_fee_usd"]), ("0.00151", "0.00051"))
+        self.assertEqual(r["fee_per_fill_usd"], {"min": "0.0005", "max": "0.00051"})
+        from decimal import Decimal as D
+        pre, post = D(r["pre_fee_terminal_liquidation_value_pnl_usd"]), D(r["post_fee_terminal_liquidation_value_pnl_usd"])
+        self.assertEqual(pre - post, D(r["fees_paid_usd"]) + D(r["hypothetical_liquidation_fee_usd"]))
+        self.assertEqual(pre, D(r["realized_pre_fee_usd"]) + D(r["unrealized_at_mark_usd"]))
+        self.assertEqual((r["final_position_btc"], r["terminal_mark"]["price_usd"]), ("-0.005", "101.01"))
+        self.assertEqual(r["terminal_mark"]["session"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

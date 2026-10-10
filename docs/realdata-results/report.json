@@ -2,6 +2,31 @@
  "capture_sha256": "835e07e9029232fac005665f5f71a9fa3a1cd691054f9dfffd96cb589d1a6ebc",
  "label": "real market observations with hypothetical execution",
  "normalized_sha256": "285db8b62f4379f1a0f8e97787e556918cb6aef57eddfa88f5d2206af6cfa62c",
+ "replay_config": {
+  "fee_rounding": "ceil per fill, in 1e-5 USD",
+  "lot_btc": "0.001",
+  "lot_units": 100000,
+  "policy": "PolicyConfig() frozen: theta 2000 bp, q_max 5, max order 5, cooldown 0",
+  "price_unit": "0.01 USD/BTC tick; ledger price per lot in 1e-5 USD",
+  "scenarios": [
+   {
+    "delay_events": 0,
+    "fee_bp": 0,
+    "name": "fee0_delay0"
+   },
+   {
+    "delay_events": 0,
+    "fee_bp": 10,
+    "name": "fee10bp_delay0"
+   },
+   {
+    "delay_events": 1,
+    "fee_bp": 10,
+    "name": "fee10bp_delay1"
+   }
+  ],
+  "stale_after_ns": 50000000
+ },
  "scenarios": {
   "fee0_delay0": {
    "decisions": {
@@ -11,20 +36,40 @@
    "delay_events": 0,
    "equity_marks": 9356,
    "fee_bp_hypothetical": 0,
+   "fee_per_fill_usd": {
+    "max": "0",
+    "min": "0"
+   },
+   "fees_paid_usd": "0",
    "fees_usd": "0",
    "filled": 227,
+   "final_position_btc": "-0.005",
    "final_position_lots": -5,
-   "hit": 122,
-   "hit_n": 204,
-   "hit_rate": 0.598,
+   "first_size_rejection": {
+    "displayed_btc": "0.0046",
+    "displayed_units": 460000,
+    "order_btc": "0.005",
+    "order_lots": 5,
+    "order_units": 500000,
+    "price_usd": "83042.45",
+    "side": "sell",
+    "step": 737
+   },
+   "hit": 137,
+   "hit_n": 200,
+   "hit_rate": 0.685,
+   "hypothetical_liquidation_fee_usd": "0",
    "label": "real market observations with hypothetical execution",
    "max_abs_position": 5,
    "max_drawdown_usd": "0.2061",
+   "notional_usd": "94229.21855",
    "orders": 1798,
    "orders_unresolved_at_end": 0,
    "policy": {
     "lot_btc": "0.001",
+    "max_order_btc": "0.005",
     "max_order_lots": 5,
+    "q_max_btc": "0.005",
     "q_max_lots": 5,
     "theta_bp": 2000
    },
@@ -34,7 +79,17 @@
    "rejected": {
     "insufficient_quantity": 1571
    },
-   "terminal_mark": "last valid top (hypothetical liquidation; no trade)"
+   "terminal_mark": {
+    "local_event_index": 9955,
+    "local_mono_ns": 1175845203215603,
+    "note": "hypothetical liquidation at the last valid top before the capture ended; no trade",
+    "price_usd": "83027.32",
+    "session": 1,
+    "side": "ask (short)"
+   },
+   "turnover_btc": "1.135",
+   "turnover_lots": 1135,
+   "unrealized_at_mark_usd": "-0.00005"
   },
   "fee10bp_delay0": {
    "decisions": {
@@ -44,20 +99,40 @@
    "delay_events": 0,
    "equity_marks": 9356,
    "fee_bp_hypothetical": 10,
+   "fee_per_fill_usd": {
+    "max": "0.41532",
+    "min": "0.41495"
+   },
+   "fees_paid_usd": "94.23018",
    "fees_usd": "94.23018",
    "filled": 227,
+   "final_position_btc": "-0.005",
    "final_position_lots": -5,
-   "hit": 122,
-   "hit_n": 204,
-   "hit_rate": 0.598,
+   "first_size_rejection": {
+    "displayed_btc": "0.0046",
+    "displayed_units": 460000,
+    "order_btc": "0.005",
+    "order_lots": 5,
+    "order_units": 500000,
+    "price_usd": "83042.45",
+    "side": "sell",
+    "step": 737
+   },
+   "hit": 137,
+   "hit_n": 200,
+   "hit_rate": 0.685,
+   "hypothetical_liquidation_fee_usd": "0.41514",
    "label": "real market observations with hypothetical execution",
    "max_abs_position": 5,
    "max_drawdown_usd": "94.25043",
+   "notional_usd": "94229.21855",
    "orders": 1798,
    "orders_unresolved_at_end": 0,
    "policy": {
     "lot_btc": "0.001",
+    "max_order_btc": "0.005",
     "max_order_lots": 5,
+    "q_max_btc": "0.005",
     "q_max_lots": 5,
     "theta_bp": 2000
    },
@@ -67,7 +142,17 @@
    "rejected": {
     "insufficient_quantity": 1571
    },
-   "terminal_mark": "last valid top (hypothetical liquidation; no trade)"
+   "terminal_mark": {
+    "local_event_index": 9955,
+    "local_mono_ns": 1175845203215603,
+    "note": "hypothetical liquidation at the last valid top before the capture ended; no trade",
+    "price_usd": "83027.32",
+    "session": 1,
+    "side": "ask (short)"
+   },
+   "turnover_btc": "1.135",
+   "turnover_lots": 1135,
+   "unrealized_at_mark_usd": "-0.00005"
   },
   "fee10bp_delay1": {
    "decisions": {
@@ -77,20 +162,40 @@
    "delay_events": 1,
    "equity_marks": 9356,
    "fee_bp_hypothetical": 10,
+   "fee_per_fill_usd": {
+    "max": "0.41532",
+    "min": "0.41495"
+   },
+   "fees_paid_usd": "110.83479",
    "fees_usd": "110.83479",
    "filled": 267,
+   "final_position_btc": "-0.005",
    "final_position_lots": -5,
-   "hit": 122,
-   "hit_n": 204,
-   "hit_rate": 0.598,
+   "first_size_rejection": {
+    "displayed_btc": "0.00003371",
+    "displayed_units": 3371,
+    "order_btc": "0.005",
+    "order_lots": 5,
+    "order_units": 500000,
+    "price_usd": "83025.84",
+    "side": "sell",
+    "step": 893
+   },
+   "hit": 137,
+   "hit_n": 200,
+   "hit_rate": 0.685,
+   "hypothetical_liquidation_fee_usd": "0.41514",
    "label": "real market observations with hypothetical execution",
    "max_abs_position": 5,
    "max_drawdown_usd": "110.90524",
+   "notional_usd": "110833.61355",
    "orders": 1955,
    "orders_unresolved_at_end": 0,
    "policy": {
     "lot_btc": "0.001",
+    "max_order_btc": "0.005",
     "max_order_lots": 5,
+    "q_max_btc": "0.005",
     "q_max_lots": 5,
     "theta_bp": 2000
    },
@@ -101,7 +206,17 @@
     "insufficient_quantity": 1641,
     "price_moved": 47
    },
-   "terminal_mark": "last valid top (hypothetical liquidation; no trade)"
+   "terminal_mark": {
+    "local_event_index": 9955,
+    "local_mono_ns": 1175845203215603,
+    "note": "hypothetical liquidation at the last valid top before the capture ended; no trade",
+    "price_usd": "83027.32",
+    "session": 1,
+    "side": "ask (short)"
+   },
+   "turnover_btc": "1.335",
+   "turnover_lots": 1335,
+   "unrealized_at_mark_usd": "-0.00005"
   }
  }
 }

@@ -47,12 +47,16 @@ applied snapshot/batch, even if unchanged; freshness (50 ms, as in the frozen po
 receipt age of the last applied book message (heartbeats do not count). One decision per emission. Session boundaries end the epoch: the strategy
 sees DISCONNECTED until the next snapshot; invalid intervals are reported.
 
+Session end cancels pending delayed orders (`session_ended`); a last valid top is used only for the
+dated terminal valuation and never for decisions after disconnection.
+
 ## Hypothetical execution
 Frozen policy (θ = 2000 bp, q_max = 5 lots, max order 5 lots, cooldown 0), decision once per
 emitted top-of-book event. IOC limit at the observed best price; it fills only if, at the decision's
 arrival event (delay configurable, default 0 events), the best price is no worse and the displayed
 size covers the order; displayed size is consumed until the next top change. **Displayed liquidity
 does not guarantee a real fill; queue position, latency, other participants and impact are ignored.**
+Displayed size is consumed only within the event of our fill and restored from the next event.
 Fees are a declared hypothetical rate in basis points of notional (reported at 0 and 10 bp), not
 Coinbase's fee schedule. Label on every output: "real market observations with hypothetical
 execution". No real orders are ever sent.
