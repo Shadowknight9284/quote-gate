@@ -1,0 +1,35 @@
+# Correctness CI: standard-library unit/integration tests only.
+# No secrets, no database, no network beyond GitHub, no deployment.
+name: tests
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  unittest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - name: Verify test collection
+        run: |
+          python - <<'PY'
+          import glob, unittest
+          def walk(s):
+              for t in s:
+                  yield from (walk(t) if isinstance(t, unittest.TestSuite) else [t])
+          tests = list(walk(unittest.TestLoader().discover("tests", top_level_dir=".")))
+          mods = {t.__class__.__module__ for t in tests}
+          files = {p[:-3].replace("/", ".") for p in glob.glob("tests/**/test_*.py", recursive=True)}
+          failed = [t for t in tests if type(t).__name__ == "_FailedTest"]
+          print(f"collected {len(tests)} tests from {len(mods)} modules; {len(files)} test files")
+          assert not failed, f"import errors: {failed}"
+          assert files <= mods, f"not collected: {sorted(files - mods)}"
+          PY
+      - name: Run tests
+        run: python -m unittest discover -s tests -t . -v

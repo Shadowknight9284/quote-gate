@@ -1,0 +1,150 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.7in,top=0.6in,bottom=0.7in]{geometry}
+\usepackage{amsmath,booktabs,tikz,pgfplots,graphicx}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{positioning,arrows.meta}
+\setlength{\columnsep}{0.22in}
+\setlength{\parskip}{0pt}
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{4pt}{2pt}
+\titleformat*{\section}{\normalsize\bfseries}
+\title{\vspace{-0.5in}\large QuoteGate: Information-Driven Trading Under Latency and Execution Constraints}
+\author{\small QuoteGate team, HackRU 2026}
+\date{\vspace{-0.35in}}
+\begin{document}
+\maketitle
+
+\section{Problem and contribution}
+Under a declared \emph{synthetic} market model, does a displayed-quantity imbalance signal from one
+reference venue carry predictive information, and does any advantage survive the spread, fees,
+execution delay and venue failures? QuoteGate contributes (i) a small distributed market-data system
+(venue simulators, persistent TCP feeds, an aggregator with per-venue sessions, sequence ordering and
+local-receipt freshness) and (ii) a transparent target-position policy evaluated with integer,
+reconciled execution accounting. Nothing here is evidence about real markets.
+
+\section{Architecture and information set}
+\begin{center}\scriptsize
+\begin{tikzpicture}[node distance=5mm and 4mm, b/.style={draw,rounded corners=1pt,inner sep=2.5pt,align=center,minimum height=8mm,minimum width=11mm,font=\footnotesize}, >={Stealth[length=3pt]}]
+\node[b] (m) {market\\model};
+\node[b,right=of m] (v) {venues\\A, B};
+\node[b,right=of v] (g) {aggregator\\(book)};
+\node[b,right=of g] (s) {strategy};
+\node[b,below=of s] (r) {router};
+\node[b,left=of r] (x) {venue\\execution};
+\node[b,left=of x] (l) {ledger};
+\draw[->] (m)--(v); \draw[->] (v)--(g); \draw[->] (g)--(s); \draw[->] (s)--(r);
+\draw[->] (r)--(x); \draw[->] (x)--node[above,font=\tiny]{ack}(l);
+\end{tikzpicture}\end{center}
+{\footnotesize The ledger's confirmed position feeds back to the strategy (not drawn).}
+The strategy observes only the reference venue A's accepted bid/ask prices and displayed quantities,
+A's locally observed freshness and connection state, and its own \emph{confirmed} position and order
+state. It never sees future quotes, simulator draws, the latent price, future outcomes, or results.
+Freshness is elapsed local time since receipt (50\,ms), not source age.
+
+\section{Signal and policy}
+For A's displayed sizes $b_t,a_t\ge 1$, $I_t=(b_t-a_t)/(b_t+a_t)$, computed exactly in integer basis
+points. This is one venue's top-of-book displayed-size (queue) imbalance, studied empirically as a
+next-move predictor in \cite{gb}; it is not order-flow imbalance \cite{cks}. Background: \cite{cjp}. With
+$\theta=0.2$ and $q_{\max}=5$ (frozen before evaluation), the target is $q^*_t=+q_{\max}$ if
+$I_t>\theta$, $-q_{\max}$ if $I_t<-\theta$, else $0$ (equality maps to $0$). One decision per step
+sends $\Delta q_t=q^*_t-q_t$ (clipped to 5) where $q_t$ is the confirmed position. No order is sent
+while A is stale or invalid (the position is held, not assumed closed), while an order is outstanding,
+or while any outcome is \emph{unknown}.
+
+\section{Synthetic market and execution}
+A latent price $p_t$ (integer ticks) drives A's quotes $[p_t,p_t+1]$; venue B quotes at or outside A,
+so there is no cross-venue arbitrage. Sizes are uniform on $\{1..100\}$. With probability $m=0.5$ the
+price moves one tick, up with probability $(1+\beta I_t)/2$: $\beta=0$ is the \emph{null} regime,
+$\beta=0.5$ the \emph{controlled} regime, an illustrative assumption. $I_t$ is observable at step $t$
+and affects only $p_{t+1}-p_t$ (verified by test). Market randomness is independent of faults and of
+the strategy, so every configuration sees the identical quote stream per seed.
+
+Orders are immediate-or-cancel limits at the observed price (buy at ask, sell at bid), routed to one
+venue. On arrival the venue checks session, current executable price (buy fills at ask $\le$ limit,
+sell at bid $\ge$ limit) and displayed size, then fills fully or rejects. A fill consumes displayed
+size until the venue's next quote. A lost acknowledgement makes the outcome \emph{unknown}: nothing
+is resent or booked until reconciliation by client order ID. Accounting uses
+$c\leftarrow c-p\,\Delta q-f$, $q\leftarrow q+\Delta q$ with FIFO realized P\&L; duplicate fill IDs
+are no-ops and conflicting reuse is rejected.
+
+\clearpage
+\section{Experiments}
+Thirty unseen seeds (101--130), 5{,}000 steps each, fee $f=1$ tick per unit (1 tick $=0.01$ currency
+units, declared). Cells: (1) no trading; (2) null; (3) controlled; (4) controlled with a 2-step
+execution delay and 1-step acknowledgement delay; (5) controlled with faults (A's feed silent 50 of
+every 500 steps; 5\% of acknowledgements lost). Economics use the evaluator-authoritative ledger rebuilt from venue fill records (never shown to the
+strategy). \emph{Net} is the post-fee terminal liquidation-value P\&L: cash plus open inventory valued at
+the last fresh A executable price (bid if long, ask if short) minus a fee for that \emph{hypothetical}
+liquidation (no trade occurs); \emph{gross} (pre-fee) = net + all fees. Values are per-seed means $\pm$ sample standard deviation over 30 seeds,
+in ticks$\times$units. The \emph{hit rate} is the share of steps with $|I_t|>\theta$ and a price move
+where $\operatorname{sign}(I_t)=\operatorname{sign}(p_{t+1}-p_t)$ (49{,}431 such steps); it is computed by the
+evaluator and is directional accuracy, not profitability.
+
+\begin{table}[h]\centering\scriptsize\setlength{\tabcolsep}{3pt}
+\resizebox{\columnwidth}{!}{\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Cell & Fills & Turnover & Gross & Net & Gross/unit & Hit \\
+\midrule
+1 no trade   & 0     & 0      & 0                 & 0                  & --      & .502 \\
+2 null       & 3317  & 16586  & $-8974\pm198$     & $-25563\pm293$     & $-0.54$ & .502 \\
+3 controlled & 3317  & 16586  & $-7382\pm209$     & $-23971\pm308$     & $-0.45$ & .633 \\
+4 + delay    & 693   & 3463   & $-1846\pm152$     & $-5311\pm171$      & $-0.53$ & .633 \\
+5 + faults   & 2009  & 10043  & $-4430\pm281$     & $-14476\pm582$     & $-0.44$ & .633 \\
+\bottomrule
+\end{tabular}}
+\caption{Per-seed means (fills, turnover in units). Gross/unit = gross / turnover.}
+\end{table}
+
+\begin{figure}[h]\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.95\columnwidth,height=3.3cm,xlabel={\scriptsize null gross P\&L (ticks$\times$units)},
+  ylabel={\scriptsize controlled gross},tick label style={font=\tiny},label style={font=\scriptsize},
+  xmin=-9500,xmax=-6700,ymin=-9500,ymax=-6700,scaled ticks=false]
+\addplot[only marks,mark size=1.2pt] table[x=null_gross,y=ctrl_gross]{fig_paired.dat};
+\addplot[dashed,domain=-9500:-6700] {x};
+\end{axis}
+\end{tikzpicture}
+\caption{Each point is one seed with the identical quote stream in both regimes. All 30 lie above
+$y=x$ (paired gain $1592\pm107$) yet all remain below zero.}
+\end{figure}
+
+\section{Interpretation}
+The planted information is detectable (hit rate .633 vs .502) and worth a paired $+1592\pm107$ ticks
+on every seed, but the policy loses on every seed in every regime. In the null regime the gross loss
+($-8974$) matches the half-spread paid when crossing ($\approx 8992$), as expected without drift.
+\textbf{Break-even.} A round trip of one unit pays the spread $s=1$ tick and two fees $2f$. Holding for
+$H$ steps earns about $m(2P-1)H\approx 0.5\cdot0.27\,H\approx0.13H$ ticks, where $P\approx0.63$ is
+the conditional up-probability. Because $I_t$ is redrawn every step, positions turn over every
+$\sim$1.5 steps, so $0.13H\ll s+2f=3$: losses are expected. Under delay, losses are smaller only
+because fewer orders fill (1109 sent per seed, 37.5\% rejected, mostly because the price had moved);
+the 2-step delay exceeds the 1-step signal horizon and loss per unit traded worsens. Lower losses
+are not better execution. Under faults the policy held through 449 stale steps and halted for 1004
+steps on 100 unknown outcomes per seed; after reconciliation every venue fill was booked exactly
+once except 11 fills belonging to orders unresolved at run end (8 unknown, the rest with
+acknowledgements in flight): the strategy-known ledger then differs from the authoritative one on
+11 seeds (total net difference 20 ticks), and results use the authoritative ledger. 21 of 30 seeds end
+with open inventory, valued hypothetically as above.
+
+\section{Systems result (separate population)}
+The same policy, order protocol and ledger also ran over the networked transport (one seed, 10\,s
+admission window): venue on a second VM on the same LAN, aggregator and strategy on the first.
+In a normal run all 3012 orders filled and were acknowledged; with every 50th acknowledgement
+dropped, 21 orders became unknown, trading paused, and all 21 were recovered by status query
+($\approx$302\,ms), never resent. The ledger matched the venue's fill log exactly; position never
+exceeded 5. Order-to-acknowledgement round trip (application level, one host's clock) was
+649\,$\mu$s median versus 132\,$\mu$s with both processes on one VM. These figures are not part of
+the table above.
+
+\section{Limitations}
+Results hold only for this synthetic model, these frozen parameters and these 30 seeds; they are not
+a general impossibility result and not evidence of real-market alpha. Fills ignore queues, impact and
+partial fills; these results come from the in-process backtest, not from the networked venue transport;
+measured system latencies (feed and route round trips) are separate from the simulated delays here.
+
+{\footnotesize
+\begin{thebibliography}{9}\setlength{\itemsep}{0pt}
+\bibitem{cjp} \'A.~Cartea, S.~Jaimungal, J.~Penalva. \emph{Algorithmic and High-Frequency Trading}. Cambridge University Press, 2015. ISBN 978-1-107-09114-6.
+\bibitem{gb} M.~D.~Gould, J.~Bonart. Queue imbalance as a one-tick-ahead price predictor in a limit order book. arXiv:1512.03492, 2015.
+\bibitem{cks} R.~Cont, A.~Kukanov, S.~Stoikov. The price impact of order book events. \emph{Journal of Financial Econometrics} 12(1):47--88, 2014.
+\end{thebibliography}}
+\end{document}

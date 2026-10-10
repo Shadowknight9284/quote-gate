@@ -1,0 +1,9 @@
+{
+  "_doc": "Placement of venue B per benchmark label (not recorded in artifacts). Unlisted labels import as 'unknown'.",
+  "m3-remoteB": "cross_vm_lan",
+  "m3-localB": "loopback",
+  "smoke": "loopback",
+  "sweep4000": "loopback", "sweep8000": "loopback", "sweep16000": "loopback",
+  "sat24000": "loopback", "sat32000": "loopback", "sat48000": "loopback", "sat64000": "loopback",
+  "m4-faults": "loopback"
+}

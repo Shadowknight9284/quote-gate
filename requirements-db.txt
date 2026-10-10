@@ -1,0 +1,4 @@
+# Optional: only needed for the Tiger Data evidence importer (quote_gate.importer --apply).
+# Core code, tests and demo use the Python 3.12 standard library only.
+# Installed into the project-local .venv on 2026-10-10:
+psycopg[binary]==3.3.6
