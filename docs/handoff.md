@@ -4,17 +4,48 @@ Read `AGENTS.md` first (rules, code map, invariants). Current status below super
 remain available for reproduction; the blocked-action list remains in force.
 All results are agent-verified only; nothing is human verified.
 
-## Current consolidation state (2026-10-10)
-- Main includes PRs #1–#3 and PR #4 (H4), merged at `3095818` after verifying head `24b1c56`.
-  H4 is complete and merged: 10/10 accepted tests; historical review recorded 6/6 mutants killed
-  in [delegation-log.md](delegation-log.md). Current suite: 205 tests across 19 test modules/files,
-  verified with `python3 -m unittest discover -s tests -t .` and the CI collection assertion.
-- PR #5 (this handoff) and PR #6 (quick demo) are being consolidated under explicit human
-  authorization; merges require green CI on exact heads and inspection of main's merge CI.
-- Codex is the sole implementation agent. No delegated task is active. Current work is this
-  local consolidation; no new features are being started.
-- For future delegated work, preserve the reviewed procedure: allowed-path check, scratch apply,
-  independent tests, mutation check, and review records. Do not launch Hermes in this checkout.
+## Current repository checkpoint (2026-10-10)
+`main` is the integrated starting point; implementation baseline `50b33b7` (PR #6 merge).
+Documentation-only consolidation [PR #7](https://github.com/Shadowknight9284/quote-gate/pull/7)
+updates this checkpoint without changing core code; its linked page records disposition and CI.
+All results are agent-run, not human-verified.
+
+| PR | Disposition | Merge commit | Merge CI |
+|---|---|---|---|
+| [#1](https://github.com/Shadowknight9284/quote-gate/pull/1) | merged: baseline | `05b7f4f` | historical success recorded in [autonomy-log.md](autonomy-log.md) |
+| [#2](https://github.com/Shadowknight9284/quote-gate/pull/2) | merged: audited Coinbase replay | `9ea2042` | historical success recorded in [autonomy-log.md](autonomy-log.md) |
+| [#3](https://github.com/Shadowknight9284/quote-gate/pull/3) | merged: agent docs/submission draft | `bce39da` | [success](https://github.com/Shadowknight9284/quote-gate/actions/runs/38075944458) |
+| [#4](https://github.com/Shadowknight9284/quote-gate/pull/4) | merged: H4 regression tests | `3095818` | [success](https://github.com/Shadowknight9284/quote-gate/actions/runs/38077224478) |
+| [#5](https://github.com/Shadowknight9284/quote-gate/pull/5) | merged: reconciled handoff | `7a4e60f` | [success](https://github.com/Shadowknight9284/quote-gate/actions/runs/38077295906) |
+| [#6](https://github.com/Shadowknight9284/quote-gate/pull/6) | merged: quick demo/ownership | `50b33b7` | [success](https://github.com/Shadowknight9284/quote-gate/actions/runs/38077353760) |
+
+H4 is complete and merged: 10/10 accepted tests; the historical review recorded 6/6 mutants
+killed in [delegation-log.md](delegation-log.md). Both autonomy-log histories are preserved.
+Current suite: **205 tests across 19 modules/files**, verified with
+`python3 -m unittest discover -s tests -t .` and the collection assertion in
+[tests.yml](../.github/workflows/tests.yml). See [state.md](state.md) for commands and provenance.
+
+Full and quick demos passed sequentially: each produced 1217 fills, ledger/venue mismatched 0.
+Default includes the matrix and reproduces all frozen means; quick skips only that section and
+is not full quant verification. Invalid arguments fail with usage. See [demo.md](demo.md).
+The paper rebuilt with `latexmk -g -pdf -interaction=nonstopmode -halt-on-error quotegate.tex`;
+`pdfinfo quotegate.pdf` reports 2 pages (run from `paper/`).
+
+Current real-data status: PR #2's audited read-only capture/replay is merged; one historical
+600-second capture, hypothetical execution only. No new capture was run during consolidation.
+Tiger Data: three Phase 1 runs historically imported and query-validated; Phase 2, C3 and real-data
+captures remain unimported. No database access or writes occurred during consolidation; live
+service state was not rechecked. See [realdata.md](realdata.md) and
+[analytics-example.md](analytics-example.md).
+
+Codex is the sole implementation owner. No feature implementation, capture, venue, benchmark
+or delegated task is in flight at the completed verification checkpoint. Feature expansion is
+stopped; N1/N2 below remain ready but unstarted, and N3 is merged. Local inspection found no
+background QuoteGate/Hermes tasks after the sequential demos. The delegation VM's last reported
+check is retained below; it has not been rechecked and no remote access was initiated.
+
+For future delegated work, retain the reviewed procedure: allowed-path check, scratch apply,
+independent tests, mutation check, review records. Never launch Hermes in this checkout.
 
 ## Historical repository snapshot — reported 2026-10-10T18:35Z
 The following table records the original handoff, not current branch or PR state.
@@ -64,8 +95,9 @@ python3 -m quote_gate.coinbase_capture --out artifacts/realdata/<run> --seconds 
 Expected synthetic means (pre-fee / post-fee): null −8973.8 / −25563.2; controlled −7381.8 / −23971.2;
 delay −1845.8 / −5311.2; faults −4430.2 / −14475.8; no-trade 0 / 0.
 
-## Local artifacts (gitignored; on the original development VM only)
-Not in Git. Regenerate synthetic/loopback outputs with the commands above. Real-data raw capture,
+## Historical artifact inventory (gitignored; original development VM)
+Original handoff checksums, not revalidated during consolidation. Not in Git.
+Regenerate synthetic/loopback outputs with the commands above. Real-data raw capture,
 M3/C3 cross-VM outputs and DB inputs cannot be regenerated identically (wall-clock/network dependent).
 
 | Path | sha256 | Bytes | What |
@@ -99,8 +131,8 @@ Approved (within existing human approvals):
   the procedure in `AGENTS.md` and an isolated workspace.
 
 Blocked (needs explicit human approval):
-- Merging any PR outside the explicitly authorized #4, #5, #6 and documentation-only cleanup.
-  Earlier human-merge holds on #4/#5 were superseded by the consolidation authorization.
+- Merging any other PR. The explicit consolidation authorization covers #4, #5, #6 (now merged)
+  and the documentation-only cleanup after its gates; earlier #4/#5 holds were superseded.
 - Importing real-data captures (or any new dataset) into Tiger Data; any schema expansion,
   destructive SQL, privilege change, or new cloud resource.
 - New remote deployments, SSH/firewall/Tailscale changes, changes to Hermes or model services.
@@ -108,12 +140,13 @@ Blocked (needs explicit human approval):
 - Devpost submission, public posting, visibility changes.
 - New strategies, parameter retuning, second execution venue.
 
-## Ready tasks (contract-first; suitable for a delegated agent)
+## Remaining ready tasks (not started; feature expansion stopped)
 | ID | Task | Allowed files | Acceptance |
 |---|---|---|---|
 | N1 | Markdown renderer for `docs/realdata-results/report.json` (pure `render(report: dict) -> str`, column order as the table in docs/realdata.md) | `quote_gate/realdata_report.py`, `tests/test_realdata_report.py` | renders the committed report into exactly that table; stdlib only |
 | N2 | Regression tests for `ws_client` handshake header parsing (case-insensitive headers, missing Accept) | `tests/test_ws_handshake_extra.py` | fail on a mutant comparing header names case-sensitively |
-| N3 | `scripts/demo.sh --quick` skipping the quant matrix | `scripts/demo.sh` | transcript sections 1–3 unchanged |
+
+N3 (`scripts/demo.sh --quick`) is merged in PR #6 and verified; it is no longer a ready task.
 
 ## Known limitations (keep stating them)
 Synthetic planted model; one 10-minute real-data sample with hypothetical fills/fees; single

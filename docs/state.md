@@ -21,30 +21,47 @@ a person independently re-ran it; nothing has reached that level yet.
 | Second execution venue in live runner | planned | `live.py` (`exec_venues`) |
 | Tiger Data importer (plan / verify-local) | tested locally without a database | `importer.py`, `normalize.py` |
 | Tiger Data write safeguards (conflict detection, pre-existing schema validation) | tested locally without a database | `importer.py`, `tests/test_importer_safeguards.py` |
-| Tiger Data read-only check | run once against the configured target: read-only session verified; TimescaleDB 2.30.2; schema `quotegate` absent; CREATE privilege present | `importer.py` |
+| Tiger Data initial read-only check (historical, before schema creation) | run once; read-only session verified; schema absent at that time; superseded by Phase 1 schema/import record below | `importer.py`, [analytics-example.md](analytics-example.md) |
 | Tiger Data schema init + Phase 1 import (3 runs), re-import, conflict probe | tested against the real service once (`b15602e`) | `docs/analytics-example.md` |
 | Tiger Data query validation (DB percentiles vs local) | tested once: 0 ns exact diff on 28 route stats + per-sample feed RTT | `docs/analytics-example.md` |
 | Order path with venue as a separate process (loopback) | tested locally | `cli venue --market-seed`, `live --venue` |
 | Two-page paper | implemented (compiles, 2 pages); references agent-checked (`paper/REFERENCES.md`) | `paper/quotegate.tex` |
-| Fallback demo | implemented; transcript recorded | `scripts/demo.sh`, `docs/demo-transcript.txt` |
+| Full and quick demos (PR #6 merged) | tested locally; full matrix means reproduced; quick skips only matrix | `scripts/demo.sh`, [demo.md](demo.md) |
 | Aggregator fairness (flooding client) and shutdown with open clients | fixed after CI exposed them; regression tested | `tests/test_reconnect_ping.py` |
 
-## Current head
-Standard suite `python3 -m unittest discover -s tests -t .`: **154 tests, OK**, 15 test files collected
-(verified from a clean clone of the PR head; the PR description records the exact SHA).
-CI: `.github/workflows/tests.yml` (stdlib only, no secrets) runs the same suite plus a collection
-check on every push and pull request. Agent verified; nothing in this file is human verified.
+## Current verification checkpoint (2026-10-10)
+Main includes merged PRs #1–#6; integration baseline `50b33b7` (PR #6 merge).
+Standard suite `python3 -m unittest discover -s tests -t .`: **205 tests, OK**.
+The collection assertion in [.github/workflows/tests.yml](../.github/workflows/tests.yml)
+collected **205 tests from 19 modules; all 19 test files**, with no import failures.
+CI runs the suite and collection check on every push and pull request.
+Merge records and CI links: [handoff.md](handoff.md).
 
-## Real-data extension (branch feat/coinbase-replay, PR #2)
+Agent-run verification on the integrated code:
+
+- Full `scripts/demo.sh`: includes all five frozen matrix cells; every documented mean matches
+  [quant.md](quant.md). Quick mode runs the same first three sections and skips the matrix;
+  it is not full quant verification. Invalid arguments fail with usage.
+- Both demos: 1217/1217 fills, ledger/venue mismatched 0; run sequentially, no shared-port overlap.
+- Paper: `cd paper && latexmk -g -pdf -interaction=nonstopmode -halt-on-error quotegate.tex`,
+  then `pdfinfo quotegate.pdf`: **2 pages**.
+
+These results and historical records are agent-run, not human-verified. No database or remote
+machine was accessed during consolidation. The delegation VM's last reported process check is
+in [handoff.md](handoff.md); it has not been rechecked.
+
+## Real-data extension (merged into main, PR #2; H4 tests in PR #4)
 | Feature | Level | Where |
 |---|---|---|
-| Coinbase BTC-USD level2_batch book reconstruction (exact units, batch-atomic, invalidation) | tested locally (17 fixtures) | `l2book.py`, `tests/test_l2book.py` |
+| Coinbase BTC-USD level2_batch book reconstruction (exact units, batch-atomic, invalidation) | tested locally; H4 accepted regression tests merged | `l2book.py`, `tests/test_l2book.py`, `tests/test_l2book_hermes.py` |
 | Read-only stdlib WebSocket capture, bounded | run once against the public feed (600 s, 0 reconnects) | `ws_client.py`, `coinbase_capture.py` |
 | Deterministic replay with hypothetical execution | tested locally (8 fixtures, hand-traced values); replay of the capture byte-identical twice | `coinbase_replay.py`, `docs/realdata.md` |
 
 ## Claim → evidence
-Published revisions are on `publish/m1-m4`. Raw artifacts are gitignored and regenerate from the
-commands shown; M3 artifacts exist only on the developer machine.
+Current integrated code is on `main`. Rows below retain historical revisions and run evidence;
+they do not imply fresh remote verification. Raw artifacts are gitignored; synthetic/loopback
+outputs regenerate with the commands shown. Historical cross-VM and real-data captures cannot
+be reproduced identically.
 
 | Claim | Revision / run | Command / artifact | Level | Limitation |
 |---|---|---|---|---|
@@ -67,5 +84,7 @@ commands shown; M3 artifacts exist only on the developer machine.
 ## Known gaps
 - Coordinator restart loses all strategy/ledger/pending-order state (in memory).
 - Venue order store is in memory; dedup is not restart-safe.
-- Tiger Data: Phase 2 and C3 artifacts not imported; no CI runs database tests (by design).
+- Tiger Data: only the historical three Phase 1 runs were imported and query-validated; Phase 2,
+  C3, and real-data artifacts remain unimported. New imports/schema changes need human approval;
+  no CI runs database tests (by design), and live service state was not rechecked.
 - Pinger behaviour under socket write errors unverified.

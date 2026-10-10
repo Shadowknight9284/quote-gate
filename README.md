@@ -3,17 +3,17 @@
 QuoteGate turns observable synthetic market information into bounded trading decisions and
 measures how execution costs, latency, and venue failures affect those decisions and their outcomes.
 
-HackRU 2026 prototype. Synthetic data only: no real money, orders, brokerage, or market data.
+HackRU 2026 prototype. Synthetic experiments plus an optional read-only real-data replay.
+No real money or real orders; all execution is simulated or hypothetical.
 Nothing here claims real-market alpha, production readiness, or exchange-grade latency.
 
-## Branches
-- **`publish/m1-m4`** — current published development branch (sanitized history).
-  PR: https://github.com/Shadowknight9284/quote-gate/pull/1 (open, not merged).
-- **`main`** — still the starter commit until PR #1 is merged. Do not develop on it.
+## Starting point
+`main` is the integrated starting point. PRs #1–#6 are merged; develop changes on feature
+branches from `main`. See [handoff](docs/handoff.md) for merge records and remaining tasks.
 
 ```
 git clone https://github.com/Shadowknight9284/quote-gate.git
-cd quote-gate && git switch publish/m1-m4
+cd quote-gate && git switch main
 ```
 
 ## Status (details and evidence: [docs/state.md](docs/state.md))
@@ -30,16 +30,20 @@ cd quote-gate && git switch publish/m1-m4
 ## Quick start (Python 3.12, standard library only)
 Run from the repository root. No virtualenv, database, or private configuration is needed.
 ```
-python3 -m unittest discover -s tests -t .          # all tests (~3 s); expect "OK"
+python3 -m unittest discover -s tests -t .          # 205 tests; expect "OK"
 python3 -m quote_gate.experiments --out /tmp/qg     # fixed quant matrix, 30 seeds (~6 s)
 python3 -m quote_gate.live --steps 2000             # networked loopback slice (~5 s), JSON report
 ```
-Market-data demo (three processes on 127.0.0.1): see [docs/demo.md](docs/demo.md).
+The [demo](docs/demo.md) runs tests, market-data fault handling, loopback orders, and the full
+quant matrix with `scripts/demo.sh [OUT_FILE]`. `scripts/demo.sh --quick [OUT_FILE]` runs the
+same first three sections and skips the matrix; quick mode is not full quant verification.
 Paper: `cd paper && latexmk -pdf quotegate.tex` (needs a TeX Live install with pgfplots).
 
 ## Optional: real market data (Coinbase BTC-USD, read-only)
 Not needed for the quick start. Public `level2_batch` feed, no account or key; execution is
-hypothetical. See [docs/realdata.md](docs/realdata.md).
+hypothetical. One 600-second capture was replayed and audited; it has not been imported into
+Tiger Data. Phase 1 analytics cover three earlier runs only; new imports and schema changes
+remain blocked. See [docs/realdata.md](docs/realdata.md).
 ```
 python3 -m quote_gate.coinbase_capture --out artifacts/realdata/run1 --seconds 600 --max-mib 250
 python3 -m quote_gate.coinbase_replay --capture artifacts/realdata/run1
