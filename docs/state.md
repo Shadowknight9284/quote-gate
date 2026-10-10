@@ -27,6 +27,11 @@ a person independently re-ran it; nothing has reached that level yet.
 | Order path with venue as a separate process (loopback) | tested locally | `cli venue --market-seed`, `live --venue` |
 | Two-page paper | implemented (compiles, 2 pages) | `paper/quotegate.tex` |
 
+## Current head
+Standard suite `python3 -m unittest discover -s tests -t .`: **152 tests, OK**, 15 test files collected
+(verified from a clean clone of the PR head; the PR description records the exact SHA).
+No CI is configured yet; tests are run manually.
+
 ## Claim → evidence
 Published revisions are on `publish/m1-m4`. Raw artifacts are gitignored and regenerate from the
 commands shown; M3 artifacts exist only on the developer machine.
