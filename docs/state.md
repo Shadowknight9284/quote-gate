@@ -35,6 +35,13 @@ Standard suite `python3 -m unittest discover -s tests -t .`: **154 tests, OK**, 
 CI: `.github/workflows/tests.yml` (stdlib only, no secrets) runs the same suite plus a collection
 check on every push and pull request. Agent verified; nothing in this file is human verified.
 
+## Real-data extension (branch feat/coinbase-replay, PR #2)
+| Feature | Level | Where |
+|---|---|---|
+| Coinbase BTC-USD level2_batch book reconstruction (exact units, batch-atomic, invalidation) | tested locally (17 fixtures) | `l2book.py`, `tests/test_l2book.py` |
+| Read-only stdlib WebSocket capture, bounded | run once against the public feed (600 s, 0 reconnects) | `ws_client.py`, `coinbase_capture.py` |
+| Deterministic replay with hypothetical execution | tested locally (8 fixtures, hand-traced values); replay of the capture byte-identical twice | `coinbase_replay.py`, `docs/realdata.md` |
+
 ## Claim → evidence
 Published revisions are on `publish/m1-m4`. Raw artifacts are gitignored and regenerate from the
 commands shown; M3 artifacts exist only on the developer machine.

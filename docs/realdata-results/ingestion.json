@@ -1,0 +1,32 @@
+{
+ "messages": 9956,
+ "by_type": {
+  "subscriptions": 1,
+  "snapshot": 1,
+  "l2update": 9355,
+  "heartbeat": 599
+ },
+ "sessions": 1,
+ "unparseable": 0,
+ "other_product": 0,
+ "invalid_intervals": [],
+ "heartbeats": 599,
+ "book": {
+  "snapshots": 1,
+  "batches_applied": 9355,
+  "changes_applied": 65435,
+  "deletes": 25913,
+  "delete_absent": 5259,
+  "updates_ignored_invalid": 0,
+  "invalidations": 1
+ },
+ "top_events": 9356,
+ "units": {
+  "price_increment": "0.01",
+  "size_increment": "1E-8",
+  "lot_units": 100000,
+  "lot_btc": "0.00100000"
+ },
+ "capture_sha256": "835e07e9029232fac005665f5f71a9fa3a1cd691054f9dfffd96cb589d1a6ebc",
+ "normalized_sha256": "285db8b62f4379f1a0f8e97787e556918cb6aef57eddfa88f5d2206af6cfa62c"
+}

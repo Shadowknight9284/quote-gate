@@ -58,3 +58,18 @@ run; per-table counts must match the source or the run rolls back and is reporte
 Remote feed RTT is summary-only: no per-sample remote timeline may be built from it.
 `verify-local` on current artifacts: 88 comparisons, 0 mismatches (50 ns tolerance = rounding of
 summaries to 0.1 µs; same nearest-rank method as SQL `percentile_disc`).
+
+## Proposed, not approved: real-data import (R1)
+Separate from Phase 1; requires its own target-specific approval. Nothing below has been executed.
+- **Schema change needed**: new table `quotegate.realdata_top` (hypertable on `observed_at`, chunk
+  1 h): `observed_at timestamptz` (local receipt, from the capture's wall/mono pair), `event_key text`
+  (`<capture_sha>:<session>:<local index>`), `capture_sha256`, `session int`, `local_index bigint`,
+  `exchange_time text` (as received, not used for latency), `bid_ticks bigint`, `bid_units bigint`,
+  `ask_ticks bigint`, `ask_units bigint`, `source text` (snapshot | l2update); PK (`event_key`,
+  `observed_at`). Plus `quotegate.realdata_runs` (one row per capture + replay scenario summaries).
+  This is a schema expansion and is **not** covered by the standing authorization.
+- **Scope**: the one 600 s capture (`835e07e9…`): 9 356 top-of-book rows, 1 run row, 3 scenario rows.
+- **Safeguards**: same as Phase 1 (target guard, schema validation before DDL, conflict detection,
+  per-run pre/inserted/final counts, unchanged re-import, conflict probe), plus a check that the
+  normalized sha256 recomputed at import time equals `ingestion.json`.
+- **Queries**: spread and top-of-book size distributions by minute; imbalance vs next mid change.
