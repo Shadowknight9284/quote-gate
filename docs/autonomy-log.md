@@ -35,3 +35,13 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   0 overfull boxes, 0 undefined citations.
 - `scripts/demo.sh`: tests, market-data path with freeze/kill, networked loopback orders, quant
   matrix; transcript committed at `docs/demo-transcript.txt` (scanned: no private details).
+
+## 2026-10-10T18:05Z — merge-gate check on `baaf363`
+- CI: push run 3/3 attempts success, pull_request run 2/2 success (same SHA).
+- Clean clone at `baaf363`, empty env: 154 tests OK; 15/15 files collected, 0 import errors;
+  experiments 5 cells; live loopback 1217/1217, 0 mismatches; paper 2 pages.
+- Tree scan: no private hosts, paths, DB identifiers or secrets (only placeholders in
+  `db/tiger.env.example` and a fake password in a unit test). No artifacts/private files tracked.
+- origin/main unchanged at `396f2d8` (no teammate changes to preserve).
+- `docs/state.md` current-head line was stale (152 tests, "no CI"); corrected in the next commit,
+  which must pass CI again before merge.

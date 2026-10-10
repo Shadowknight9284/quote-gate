@@ -25,12 +25,15 @@ a person independently re-ran it; nothing has reached that level yet.
 | Tiger Data schema init + Phase 1 import (3 runs), re-import, conflict probe | tested against the real service once (`b15602e`) | `docs/analytics-example.md` |
 | Tiger Data query validation (DB percentiles vs local) | tested once: 0 ns exact diff on 28 route stats + per-sample feed RTT | `docs/analytics-example.md` |
 | Order path with venue as a separate process (loopback) | tested locally | `cli venue --market-seed`, `live --venue` |
-| Two-page paper | implemented (compiles, 2 pages) | `paper/quotegate.tex` |
+| Two-page paper | implemented (compiles, 2 pages); references agent-checked (`paper/REFERENCES.md`) | `paper/quotegate.tex` |
+| Fallback demo | implemented; transcript recorded | `scripts/demo.sh`, `docs/demo-transcript.txt` |
+| Aggregator fairness (flooding client) and shutdown with open clients | fixed after CI exposed them; regression tested | `tests/test_reconnect_ping.py` |
 
 ## Current head
-Standard suite `python3 -m unittest discover -s tests -t .`: **152 tests, OK**, 15 test files collected
+Standard suite `python3 -m unittest discover -s tests -t .`: **154 tests, OK**, 15 test files collected
 (verified from a clean clone of the PR head; the PR description records the exact SHA).
-No CI is configured yet; tests are run manually.
+CI: `.github/workflows/tests.yml` (stdlib only, no secrets) runs the same suite plus a collection
+check on every push and pull request. Agent verified; nothing in this file is human verified.
 
 ## Claim → evidence
 Published revisions are on `publish/m1-m4`. Raw artifacts are gitignored and regenerate from the
