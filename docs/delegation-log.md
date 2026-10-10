@@ -17,3 +17,16 @@
 - Repair 2: header restored; missing-metric still wrong; 3 of its own tests failing while report said requirements satisfied.
 - Outcome: patch not applied. Claude wrote `quote_gate/report.py`; verified by `tests/acceptance/test_report_acceptance.py` (5/5).
 - Lesson: Hermes reports are not evidence; exact-format tasks need the acceptance test shipped with the task.
+
+## A1 audit (Hermes second pass) — no findings confirmed; patch not applied
+- Baseline `720b0e0`; scope: validation/sequence, freshness boundary, reconnect invalidation,
+  ping bookkeeping. Allowed output: `tests/audit/` only (respected). Budget 300 s, 30 turns.
+- Returned 4 findings + 12 tests (all passing at baseline; none demonstrates a defect).
+  1. `_check` ordering "may let invalid sequences pass" — **rejected**: validation precedes
+     dup/order checks by design; an invalid message is rejected either way; no reproduction.
+  2. Freshness equality boundary — **rejected**: Hermes's own test asserts FRESH at stale−1 and
+     STALE at ==stale (the documented contract) and passes; existing fixture covers it too.
+  3. Concurrent-reconnect races — **unverified**: no reproduction (single asyncio task per venue).
+  4. Pinger cleanup — **unverified**: tests only assert attributes exist.
+- Reported "Ran 35 tests … OK" does not match any reproducible run (baseline+audit = 71).
+- Outcome: report retained in local artifacts; tests not applied (low assertion value).
