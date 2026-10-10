@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Fallback demo: runs every local demo step and records a transcript (no network beyond 127.0.0.1,
-# no database, no private configuration). Usage: scripts/demo.sh [OUT_FILE]
+# no database, no private configuration). Usage: scripts/demo.sh [--quick] [OUT_FILE]
 set -uo pipefail
+QUICK=false
+if [[ ${1:-} == --quick ]]; then
+  QUICK=true
+  shift
+fi
+if [[ $# -gt 1 || ${1:-} == --* ]]; then
+  echo "Usage: scripts/demo.sh [--quick] [OUT_FILE]" >&2
+  exit 2
+fi
 OUT=${1:-artifacts/demo/transcript.txt}
 mkdir -p "$(dirname "$OUT")"
 exec > >(tee "$OUT") 2>&1
@@ -35,10 +44,12 @@ print({k: d[k] for k in ('sent','filled','rejected','timeouts','unresolved','pos
 print('exec RTT (ns):', {k: d['exec_rtt_ns'][k] for k in ('count','p50','p99')})
 print('ledger vs venue:', d['venue_reconciliation'])"
 
+if [[ $QUICK == false ]]; then
 step "4. Deterministic quant experiment (paper numbers)"
 python3 -m quote_gate.experiments --out artifacts/demo/qg | python3 -c "
 import json,sys
 for l in sys.stdin:
     d=json.loads(l)
     if 'cell' in d: print(f\"{d['cell']:20s} fills {d['fills_mean']:7.1f}  pre-fee {d['gross']['mean']:9.1f}  post-fee {d['net']['mean']:9.1f}  hit {d['hit_rate']['rate']}\")"
+fi
 echo; echo "Done. Transcript: $OUT"
