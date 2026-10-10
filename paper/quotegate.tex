@@ -43,7 +43,8 @@ Freshness is elapsed local time since receipt (50\,ms), not source age.
 
 \section{Signal and policy}
 For A's displayed sizes $b_t,a_t\ge 1$, $I_t=(b_t-a_t)/(b_t+a_t)$, computed exactly in integer basis
-points. This is one venue's top-of-book displayed-size imbalance, not trade-flow imbalance. With
+points. This is one venue's top-of-book displayed-size (queue) imbalance, studied empirically as a
+next-move predictor in \cite{gb}; it is not order-flow imbalance \cite{cks}. Background: \cite{cjp}. With
 $\theta=0.2$ and $q_{\max}=5$ (frozen before evaluation), the target is $q^*_t=+q_{\max}$ if
 $I_t>\theta$, $-q_{\max}$ if $I_t<-\theta$, else $0$ (equality maps to $0$). One decision per step
 sends $\Delta q_t=q^*_t-q_t$ (clipped to 5) where $q_t$ is the confirmed position. No order is sent
@@ -142,8 +143,8 @@ measured system latencies (feed and route round trips) are separate from the sim
 
 {\footnotesize
 \begin{thebibliography}{9}\setlength{\itemsep}{0pt}
-\bibitem{cjp} \'A.~Cartea, S.~Jaimungal, J.~Penalva. \emph{Algorithmic and High-Frequency Trading}. Cambridge Univ.\ Press, 2015.
-\bibitem{gb} M.~D.~Gould, J.~Bonart. Queue imbalance as a one-tick-ahead price predictor in a limit order book. \emph{Market Microstructure and Liquidity}, 2016.
-\bibitem{cks} R.~Cont, A.~Kukanov, S.~Stoikov. The price impact of order book events. \emph{J.\ Financial Econometrics}, 2014.
+\bibitem{cjp} \'A.~Cartea, S.~Jaimungal, J.~Penalva. \emph{Algorithmic and High-Frequency Trading}. Cambridge University Press, 2015. ISBN 978-1-107-09114-6.
+\bibitem{gb} M.~D.~Gould, J.~Bonart. Queue imbalance as a one-tick-ahead price predictor in a limit order book. arXiv:1512.03492, 2015.
+\bibitem{cks} R.~Cont, A.~Kukanov, S.~Stoikov. The price impact of order book events. \emph{Journal of Financial Econometrics} 12(1):47--88, 2014.
 \end{thebibliography}}
 \end{document}

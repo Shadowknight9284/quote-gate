@@ -27,3 +27,11 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   until nothing is pending) before asserting exact agreement; the `== 0` assertion is kept and added
   to two more live tests.
 - Stress: 6 concurrent suites x 3 rounds (18/18 OK); 4 suites pinned to one CPU x 2 rounds (8/8 OK).
+
+## 2026-10-10T17:47Z — references, in-text citations, fallback demo
+- Citations checked: Cartea et al. (Cambridge copyright page, ISBN), Cont et al. (HAL + RePEc,
+  JFEC 12(1):47–88), Gould & Bonart (arXiv:1512.03492 page; journal details only secondary, so the
+  arXiv version is cited). Record: `paper/REFERENCES.md`. In-text citations added; paper 2 pages,
+  0 overfull boxes, 0 undefined citations.
+- `scripts/demo.sh`: tests, market-data path with freeze/kill, networked loopback orders, quant
+  matrix; transcript committed at `docs/demo-transcript.txt` (scanned: no private details).

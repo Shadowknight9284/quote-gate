@@ -1,5 +1,11 @@
 # Demo (all local, 127.0.0.1)
 
+One command runs every step below and records a transcript (fallback if a live demo fails):
+```
+scripts/demo.sh                     # writes artifacts/demo/transcript.txt (~20 s)
+```
+A recorded transcript is committed at [demo-transcript.txt](demo-transcript.txt).
+
 ## 1. Market-data path (three processes)
 ```
 scripts/local_stack.sh                      # venues A, B + aggregator; PIDs in artifacts/stack.pids
