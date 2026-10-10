@@ -1,0 +1,85 @@
+{
+ "decisions": {
+  "order": 1320,
+  "at_target": 680
+ },
+ "sent": 1217,
+ "filled": 1217,
+ "rejected": {},
+ "timeouts": 0,
+ "unknown_disconnect": 0,
+ "resolved_by_exec": 1217,
+ "resolved_by_status": 0,
+ "resolved_not_received": 0,
+ "lost_record": 0,
+ "duplicate_exec": 0,
+ "invalid_response": {},
+ "no_route": 103,
+ "not_connected": 0,
+ "status_queries": 0,
+ "unresolved": [],
+ "position": -5,
+ "max_abs_position": 5,
+ "cash_ticks": 41275,
+ "fees_ticks": 6085,
+ "exec_rtt_ns": {
+  "count": 1217,
+  "retained": 1217,
+  "p50": 53040,
+  "p95": 101051,
+  "p99": 142701,
+  "max": 607091
+ },
+ "reconcile_ns": {
+  "count": 0,
+  "retained": 0
+ },
+ "venue_reconciliation": {
+  "venue_fills": 1217,
+  "ledger_fills": 1217,
+  "unbooked_venue_fills": 0,
+  "unbooked_all_unresolved": true,
+  "ledger_not_at_venue": 0,
+  "venue_fill_log_dropped": 0,
+  "mismatched": 0
+ },
+ "venue": {
+  "venue_id": "A",
+  "session": 1,
+  "sent": 2000,
+  "coalesced": 0,
+  "refused_connections": 0,
+  "pongs": 50,
+  "pongs_dropped": 0,
+  "paused": false,
+  "send_lag_ns": {
+   "count": 2000,
+   "retained": 2000,
+   "p50": 514716,
+   "p95": 1033308,
+   "p99": 1076010,
+   "max": 1101436
+  },
+  "orders_executed": 1217,
+  "bad_orders": 0,
+  "store_records": 1024,
+  "store_unreleased": 0,
+  "store_evicted": 193,
+  "store_rejected_full": 0
+ },
+ "feed_rtt_ns": {
+  "count": 50,
+  "retained": 50,
+  "p50": 79291,
+  "p95": 156155,
+  "p99": 171366,
+  "max": 171366
+ },
+ "backtest_comparison": {
+  "live_decisions": 2000,
+  "backtest_fills": 1303,
+  "live_order_events_also_backtest_fill_events": 1265,
+  "live_order_events": 1320,
+  "note": "backtest decides on every step with exact synchronous fills; live decides per accepted quote and blocks while an order is outstanding, so decision sets differ"
+ }
+}
