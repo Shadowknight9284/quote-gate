@@ -18,15 +18,25 @@
 - Outcome: patch not applied. Claude wrote `quote_gate/report.py`; verified by `tests/acceptance/test_report_acceptance.py` (5/5).
 - Lesson: Hermes reports are not evidence; exact-format tasks need the acceptance test shipped with the task.
 
-## A1 audit (Hermes second pass) — no findings confirmed; patch not applied
+## A1 audit (Hermes second pass) — No confirmed defects from this audit; audit patch rejected.
+This is not a clean bill of health and not a security audit result.
 - Baseline `720b0e0`; scope: validation/sequence, freshness boundary, reconnect invalidation,
   ping bookkeeping. Allowed output: `tests/audit/` only (respected). Budget 300 s, 30 turns.
 - Returned 4 findings + 12 tests (all passing at baseline; none demonstrates a defect).
-  1. `_check` ordering "may let invalid sequences pass" — **rejected**: validation precedes
-     dup/order checks by design; an invalid message is rejected either way; no reproduction.
-  2. Freshness equality boundary — **rejected**: Hermes's own test asserts FRESH at stale−1 and
-     STALE at ==stale (the documented contract) and passes; existing fixture covers it too.
-  3. Concurrent-reconnect races — **unverified**: no reproduction (single asyncio task per venue).
-  4. Pinger cleanup — **unverified**: tests only assert attributes exist.
-- Reported "Ran 35 tests … OK" does not match any reproducible run (baseline+audit = 71).
-- Outcome: report retained in local artifacts; tests not applied (low assertion value).
+  1. `_check` ordering — rejected: validation precedes dup/order checks by design; no reproduction.
+  2. Freshness equality boundary — rejected: Hermes's own test asserts the documented contract and passes.
+  3. Concurrent reconnects — unverified by A1. Claude follow-up: `tests/test_reconnect_ping.py`
+     (8 rapid reconnects: epochs 1..9, no leaked tasks, second subscriber refused) passes.
+  4. Ping cleanup — unverified by A1. Claude follow-up: single outstanding ping, timeouts counted,
+     mismatched pong not recorded as RTT; passes. Remaining unverified: behaviour under write errors.
+- Reported "Ran 35 tests … OK" did not match any reproducible run (baseline + audit = 71).
+
+## T3 normalizer — rejected after 2 repairs; implemented locally by Claude
+- Contract `docs/contracts/T3-normalize.md`; baseline `00973ad`; budget 240 s, 30 turns.
+- Attempt 0: µs→ns multiplied by 1e6; bool accepted; float in ns dicts accepted; invalid trial
+  accepted; tests read files and patched sys.path (5 of its own tests errored).
+- Repair 1: Claude acceptance file supplied (unchanged by Hermes, verified byte-for-byte). Still
+  2/11 acceptance failures; tests still read files although the report said they did not.
+- Repair 2: 1/11 acceptance failure remained (whole-number µs values not converted); report
+  attributed it to "test expectations", but the test asserts the contract formula.
+- Outcome: patch not applied. Claude wrote `quote_gate/normalize.py`; 11/11 acceptance tests pass.

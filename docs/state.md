@@ -26,6 +26,10 @@ freeze → STALE at 100.2 ms quote age with A unaffected, stop → DISCONNECTED 
 reconnect attempts counted, restart → new epoch, session/sequence reset, wire ==
 generator again. Feed ping/pong RTT measured on the aggregator host only.
 
-Open: overload to saturation, coordinator-restart semantics (aggregator state is
+M4 (tested locally): bounded event log + freshness monitor; faults under load recorded with
+0 self-reported freshness violations; saturation plateau ~45k route lookups/s on one VM.
+Evidence store (E1): schema/queries/importer built; tested without a database only.
+
+Open: coordinator-restart semantics (aggregator state is
 in-memory only: restart loses all venue state and counters; every venue starts at
 NO_QUOTE in a new epoch), execution (M5).

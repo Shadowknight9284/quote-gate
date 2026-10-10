@@ -12,5 +12,7 @@ M5 execution only if M4 benchmarks exist by Sun 06:00. Freeze code Sun 09:30.
 | M1c | NDJSON protocol + venue simulator + aggregator (local, 1 venue) | Claude | done, tested locally (loopback) |
 | M2 | Two local venues + benchmark client (scheduled load) | Claude | done, smoke-benchmarked locally |
 | M3 | Venue B on second VM, RTT-only cross-host timing | Claude | done: 12/12 remote checks, matched bench, cleaned up |
-| M4 | Fault + overload scenarios, report | — | todo |
+| M4 | Fault + overload scenarios, report | Claude | done locally (loopback); remote per-sample feed RTT not rerun |
+| T3 | Artifact normalizer | Hermes→Claude | done locally (Hermes patch rejected after 2 repairs) |
+| E1 | Tiger Data evidence store: schema, queries, importer | Claude | built + DB-free tested; DB connection pending approval |
 | M5 | Simulated execution (UNKNOWN on timeout, idempotent IDs) | — | optional |

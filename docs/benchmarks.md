@@ -60,3 +60,32 @@ Interpretation:
   i.e. asyncio timer granularity in the Python client, not by the aggregator.
 - Both VMs may share a physical host; this is cross-VM/LAN behaviour, not independent
   physical-host failure tolerance. Clocks were not compared across hosts.
+
+## M4: faults under load and saturation sweep (local loopback, one VM), 2026-10-10
+Instrumentation: aggregator event ring (10 000, 0 dropped), freshness monitor polling every 1 ms,
+per-sample feed RTT, `quote_age_ns` in route replies; bench raw v2 with UTC anchor + observer.
+
+Fault run (`scripts/m4_faults.sh`): 2000 req/s for 30 s, 8 connections, 1 trial; labelled fault
+injection: 20 × SIGSTOP venue A for 300 ms, then kill venue B, restart after 1.5 s.
+- 60 000 offered / 60 000 completed / 0 errors / 0 backlog.
+- Freshness violations (server-reported quote age ≥ 100 ms on a routed reply): 0 of 60 000.
+  Self-reported by the aggregator; not an independent check.
+- Stale-detection delay (monitor observation − (receipt + 100 ms)), n = 20: min 48 µs,
+  p50 0.44–0.48 ms, max 1.08 ms. Bounded by the 1 ms monitor tick plus asyncio timer
+  granularity. n = 20 does not support a p99. The routing decision itself evaluates freshness
+  exactly at query time and does not depend on the monitor.
+- The single "stale at 100.2 ms quote age" observation in M3 is one observation, not a distribution.
+- Venue B kill/restart: disconnect event, 4 refused reconnects counted, new epoch, fresh again.
+  The monitor can miss states shorter than one tick (e.g. NO_QUOTE between connect and first quote).
+- send_to_completion p50/p99 147.6/237.1 µs; generator_delay p99 1070.5 µs.
+
+Saturation sweep (time-boxed; one loopback trial per rate, 4 s, 1 s warm-up, 16 connections):
+| offered rps | completed / offered | not_sent_backlog | steady rps | send_to_completion p50/p99 µs | schedule_to_completion p99 µs |
+|---|---|---|---|---|---|
+| 24 000 | 95 969 / 96 000 | 31 | 23 988 | 141.4 / 307.1 | 575.1 |
+| 32 000 | 127 942 / 128 000 | 58 | 31 978 | 177.5 / 352.7 | 533.1 |
+| 48 000 | 183 655 / 192 000 | 8 345 | 46 220 | 331.2 / 544.5 | 2285.1 |
+| 64 000 | 180 359 / 256 000 | 75 641 | 44 927 | 350.9 / 559.8 | 2350.6 |
+Completed throughput plateaus near 45k route lookups/s with the bench client and aggregator
+(both single-threaded Python) on the same VM; the bottleneck was not isolated. Freshness
+violations 0 at every rate. Not a capacity claim; single trials.
