@@ -1,0 +1,34 @@
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Build outputs
+build/
+dist/
+
+# Local artifacts
+artifacts/
+benchmark-results/
+*.log
+
+# Private deployment notes
+docs/private/
+*.local.md
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
