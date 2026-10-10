@@ -76,3 +76,7 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   added `AGENTS.md` (agent entry point) and `docs/handoff.md` (in-flight H4 review procedure,
   ready tasks N1–N3 with contracts, decisions reserved for humans); submission draft updated.
 - Hermes H4 (tests only, `tests/test_l2book_hermes.py`) launched 18:27Z, baseline `1b96b03`.
+
+## 2026-10-10T18:35Z — Codex handoff
+- Nothing in flight; no new Hermes task. State, commands, artifact checksums and approved/blocked
+  actions recorded in `docs/handoff.md` (branch `handoff/codex`). PR #4 left open for human merge.
