@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Venue B on the second VM (M3). Only touches processes recorded in this task's pid file.
 #   scripts/remote_venue.sh deploy   TASK        # new ~/qg-venue/TASK, runtime source from HEAD only
-#   scripts/remote_venue.sh start    TASK [TIMEOUT_S]
+#   scripts/remote_venue.sh start    TASK [TIMEOUT_S] [extra venue args...]  (default: M3 feed-only venue B)
 #   scripts/remote_venue.sh identity TASK
 #   scripts/remote_venue.sh signal   TASK STOP|CONT
 #   scripts/remote_venue.sh stop     TASK
@@ -14,8 +14,8 @@ BIND=${QG_REMOTE_BIND:?set QG_REMOTE_BIND}
 PORT=19102
 SSH=(ssh -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=5 -i "${QG_SSH_KEY:?set QG_SSH_KEY}" "$HOST")
 RUNTIME=(quote_gate/__init__.py quote_gate/aggregator.py quote_gate/book.py quote_gate/cli.py
-         quote_gate/metrics.py quote_gate/protocol.py quote_gate/router.py quote_gate/synthetic.py
-         quote_gate/venue.py)
+         quote_gate/execution.py quote_gate/market_sim.py quote_gate/metrics.py quote_gate/protocol.py
+         quote_gate/quant.py quote_gate/router.py quote_gate/synthetic.py quote_gate/venue.py)
 
 cmd=$1; task=$2
 [[ $task =~ ^[A-Za-z0-9_-]+$ ]] || { echo "bad task id" >&2; exit 2; }
@@ -40,9 +40,12 @@ case $cmd in
     ;;
   start)
     t=${3:-1800}
+    shift 3 2>/dev/null || shift $#
+    for x in "$@"; do [[ $x =~ ^[A-Za-z0-9_.=-]+$ ]] || { echo "bad venue arg" >&2; exit 2; }; done
+    VARGS=${*:---id B --seed 2 --start-bid 10002 --rate 1000}
     "${SSH[@]}" "cd $dir && if ss -ltn 'sport = :$PORT' | tail -n +2 | grep -q .; then echo 'port $PORT busy' >&2; exit 4; fi
-      setsid nohup timeout -k 5 $t python3 -m quote_gate.cli venue --id B --host $BIND --port $PORT \
-        --seed 2 --start-bid 10002 --rate 1000 --stats-every 3600 >> venue.log 2>&1 < /dev/null &
+      setsid nohup timeout -k 5 $t python3 -m quote_gate.cli venue $VARGS --host $BIND --port $PORT \
+        --stats-every 3600 >> venue.log 2>&1 < /dev/null &
       echo \$! > venue.pid; sleep 1; cat venue.pid"
     ;;
   identity)
@@ -60,6 +63,9 @@ case $cmd in
       ss -ltn 'sport = :$PORT' | tail -n +2 | grep -q . && echo 'port still bound' >&2 || echo 'stopped; port free'"
     mkdir -p "$local_dir"
     "${SSH[@]}" "tail -c 20000 $dir/venue.log" > "$local_dir/venue.log"
+    for f in $("${SSH[@]}" "cd $dir && ls fills-*.jsonl 2>/dev/null"); do
+      [[ $f =~ ^fills-[A-Za-z0-9_-]+\.jsonl$ ]] && "${SSH[@]}" "cat $dir/$f" > "$local_dir/$f"
+    done
     ;;
   *) echo "unknown command" >&2; exit 2 ;;
 esac

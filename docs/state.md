@@ -20,7 +20,9 @@ a person independently re-ran it; nothing has reached that level yet.
 | Order path across VMs | planned (not approved) | — |
 | Second execution venue in live runner | planned | `live.py` (`exec_venues`) |
 | Tiger Data importer (plan / verify-local) | tested locally without a database | `importer.py`, `normalize.py` |
-| Tiger Data schema init / import | implemented, never run (no credentials; 2 safeguards missing) | `db/`, `importer.py` |
+| Tiger Data write safeguards (conflict detection, pre-existing schema validation) | tested locally without a database | `importer.py`, `tests/test_importer_safeguards.py` |
+| Tiger Data read-only check / schema init / import | implemented, never run (awaiting approval) | `importer.py`, `db/` |
+| Order path with venue as a separate process (loopback) | tested locally | `cli venue --market-seed`, `live --venue` |
 | Two-page paper | implemented (compiles, 2 pages) | `paper/quotegate.tex` |
 
 ## Claim → evidence
@@ -39,10 +41,12 @@ commands shown; M3 artifacts exist only on the developer machine.
 | Strategy loses in every cell; paired controlled−null +1592±107 on 30/30 seeds | same | same; `paper/fig_paired.dat` | tested locally | frozen parameters, 30 seeds, this model only |
 | Live loopback: 1217/1217 orders resolved by exec; ledger == venue fill log; exec RTT p50 ≈ 53 µs | `4b0ec45`, seed 101, 2000 steps | `python3 -m quote_gate.live --steps 2000` | tested locally | venue and aggregator in one event loop; RTT not comparable to cross-host |
 | Dropped ack / disconnect after exec / venue restart behave per contract O1 | `4b0ec45` | `python3 -m unittest tests.test_live_local` | tested locally | loopback; fault hooks are injected |
+| Separate-process loopback: normal 3012/3012 filled, exec RTT p50 ≈ 130 µs; drop-ack-every-50: 21 timeouts → 21 resolved by status, ≈301 ms to reconciled outcome; ledger == venue fill log in both | pre-C3 rehearsal | `cli venue --market-seed 101 ...` + `live --venue 127.0.0.1:19105` | tested locally | same VM; not comparable to the single-process 53 µs figure (process boundary added) |
+| Dedup lifetime: until released **and** evicted; evicted ID re-executes | current | `tests/test_live_local.py` | tested locally | in-memory; not restart-safe |
 
 ## Known gaps
 - Order path not run across processes on different VMs (not approved).
 - Coordinator restart loses all strategy/ledger/pending-order state (in memory).
 - Venue order store is in memory; dedup is not restart-safe.
-- Tiger Data: no credentials; conflict detection and pre-existing-table validation not implemented.
+- Tiger Data: safeguards implemented but never exercised against a real database.
 - Pinger behaviour under socket write errors unverified.

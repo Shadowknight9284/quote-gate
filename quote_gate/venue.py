@@ -66,6 +66,9 @@ class Venue:
         self.fill_log_dropped = 0
         self.bad_orders = 0
         self.drop_next_acks = 0             # fault: record outcome, do not send exec
+        self.drop_ack_every = 0             # fault: drop the exec of every Nth stored order
+        self.orders_received = 0
+        self.acks_dropped = 0
         self.disconnect_after_exec = 0      # fault: record outcome, then drop the connection
         self._server: asyncio.Server | None = None
         self._writer: asyncio.StreamWriter | None = None
@@ -236,13 +239,15 @@ class Venue:
                                                                 "status": "REJECTED"})))
             return
         self.store.put(oid, payload, outcome)    # record BEFORE acknowledging
+        self.orders_received += 1
         if filled:
             if len(self.fill_log) < self.fill_log_capacity:
                 self.fill_log.append((oid, outcome))
             else:
                 self.fill_log_dropped += 1
-        if self.drop_next_acks > 0:
-            self.drop_next_acks -= 1
+        if self.drop_next_acks > 0 or (self.drop_ack_every and self.orders_received % self.drop_ack_every == 0):
+            self.drop_next_acks = max(0, self.drop_next_acks - 1)
+            self.acks_dropped += 1
             return
         if self.disconnect_after_exec > 0:
             self.disconnect_after_exec -= 1

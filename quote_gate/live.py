@@ -94,6 +94,7 @@ class LiveRunner:
         self._n = 0
         self.last_event = 0             # reference quote sequence (resets per venue session)
         self.decision_step = 0          # monotonic across sessions; used for strategy timing
+        self.max_abs_position = 0
         agg.order_handler = self.on_frame
         agg.quote_listener = self.on_quote
         agg.disconnect_listener = self.on_disconnect
@@ -202,6 +203,7 @@ class LiveRunner:
         del self.pending[p.oid]
         self.resolved[p.oid] = {"via": via, "signed_qty": signed}
         self.strategy.on_resolved(p.oid, signed, self.decision_step)
+        self.max_abs_position = max(self.max_abs_position, abs(self.ledger.position))
         conn = self.agg.conn.get(p.venue_id)
         if conn is not None and conn["instance"] == p.instance:
             conn["writer"].write(protocol.encode({"type": "release", "client_order_id": p.oid}))
@@ -260,7 +262,8 @@ class LiveRunner:
                 "no_route": c.no_route, "not_connected": c.not_connected,
                 "status_queries": c.status_queries,
                 "unresolved": [(p.oid, p.state) for p in self.pending.values()],
-                "position": self.ledger.position, "cash_ticks": self.ledger.cash_ticks,
+                "position": self.ledger.position, "max_abs_position": self.max_abs_position,
+                "cash_ticks": self.ledger.cash_ticks,
                 "fees_ticks": self.ledger.fees_ticks,
                 "exec_rtt_ns": self.exec_rtt_ns.summary(), "reconcile_ns": self.reconcile_ns.summary()}
 
@@ -322,12 +325,77 @@ def compare_with_backtest(seed: int, steps: int, live_log) -> dict:
                     "accepted quote and blocks while an order is outstanding, so decision sets differ"}
 
 
+async def run_external(host: str, port: int, duration_s: float, observer: str,
+                       out_dir: str | None, settle_s: float = 2.0) -> dict:
+    """Aggregator + runner against an already-running venue process (loopback or another VM)."""
+    import os
+    book = Book("SYN1", ["A"], 50_000_000)
+    agg = Aggregator(book, {"A": (host, port)}, observer=observer)
+    runner = LiveRunner(agg, PolicyConfig(), run_tag=f"x{int(time.time())}")
+    await agg.start()
+    await asyncio.sleep(duration_s)
+    agg.quote_listener = None                # stop deciding; let in-flight outcomes resolve
+    await asyncio.sleep(settle_s)
+    rep = runner.report()
+    ev = [e for e in agg.events.items() if e[1] == "A" and e[2] == "status"]
+    rep["feed"] = {"status_transitions": [(e[3]["from"], e[3]["to"]) for e in ev][:50],
+                   "stale_transitions": sum(1 for e in ev if e[3]["to"] == "stale"),
+                   "stale_detect_ns": agg.stale_detect_ns.summary(),
+                   "accepted_quotes": book.venues["A"].accepted, "gaps": book.venues["A"].gaps,
+                   "rejected": dict(book.venues["A"].rejected), "connects": agg.connects["A"],
+                   "feed_errors": dict(agg.feed_errors["A"]), "feed_rtt_ns": agg.feed_rtt_ns["A"].summary()}
+    rep["max_abs_position_bound"] = runner.policy.q_max
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+        with open(os.path.join(out_dir, "ledger_fills.jsonl"), "w") as f:
+            for fl in runner.ledger.fills.values():
+                f.write(json.dumps([fl.order_id, fl.venue_id, fl.signed_qty, fl.price_ticks, fl.fee_ticks]) + "\n")
+        with open(os.path.join(out_dir, "report.json"), "w") as f:
+            json.dump({k: v for k, v in rep.items() if k != "decision_log"}, f, indent=1)
+    await agg.stop()
+    return rep
+
+
+def reconcile_files(ledger_path: str, venue_log_path: str, unresolved: list) -> dict:
+    """Evaluator-only: strategy ledger file vs venue fill log file (fetched after the run)."""
+    led = {}
+    with open(ledger_path) as f:
+        for line in f:
+            oid, vid, q, p, fee = json.loads(line)
+            led[oid] = (abs(q), p, fee)
+    with open(venue_log_path) as f:
+        header = json.loads(f.readline())
+        ven = {oid: (o["quantity"], o["fill_price_ticks"], o["fee_ticks"]) for oid, o in map(json.loads, f)}
+    unbooked = [oid for oid in ven if oid not in led]
+    unresolved_ids = {u[0] for u in unresolved}
+    return {"venue_fills": len(ven), "ledger_fills": len(led), "unbooked_venue_fills": len(unbooked),
+            "unbooked_all_unresolved": all(oid in unresolved_ids for oid in unbooked),
+            "ledger_not_at_venue": sum(1 for oid in led if oid not in ven),
+            "mismatched": sum(1 for oid in led if oid in ven and led[oid] != ven[oid]),
+            "venue_header": header}
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="quote_gate.live")
     p.add_argument("--seed", type=int, default=101)
     p.add_argument("--steps", type=int, default=3000)
     p.add_argument("--rate", type=float, default=500.0)
+    p.add_argument("--venue", default=None, help="host:port of an external venue process")
+    p.add_argument("--duration", type=float, default=10.0, help="external mode: seconds of trading")
+    p.add_argument("--observer", default="aggregator@vm1")
+    p.add_argument("--out", default=None, help="external mode: directory for report and ledger")
+    p.add_argument("--reconcile", nargs=2, metavar=("REPORT_DIR", "VENUE_FILL_LOG"), default=None)
     a = p.parse_args(argv)
+    if a.reconcile:
+        with open(f"{a.reconcile[0]}/report.json") as f:
+            unresolved = json.load(f)["unresolved"]
+        print(json.dumps(reconcile_files(f"{a.reconcile[0]}/ledger_fills.jsonl", a.reconcile[1], unresolved), indent=1))
+        return
+    if a.venue:
+        host, port = a.venue.rsplit(":", 1)
+        rep = asyncio.run(run_external(host, int(port), a.duration, a.observer, a.out))
+        print(json.dumps(rep, indent=1))
+        return
     rep = asyncio.run(run_loopback(a.seed, a.steps, a.rate))
     log = rep.pop("decision_log")
     rep["backtest_comparison"] = compare_with_backtest(a.seed, a.steps, log)

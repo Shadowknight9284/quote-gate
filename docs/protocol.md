@@ -58,6 +58,16 @@ record is never evicted. If the store is full of unreleased records the order is
 `store_full` before execution and is not stored. The store is in memory: a venue restart (new
 `instance`) loses it. Deduplication is **not** restart-safe.
 
+Deduplication lifetime (exact): a `client_order_id` is deduplicated by a venue instance from the
+moment its record is stored until that record has been **released** by the client **and** then
+**evicted** (eviction happens only when a new order needs room and evicts the oldest released record).
+After eviction the venue has no memory of the ID: re-sending it executes as a new order, and
+`order_status` returns `found=false` from the same instance (which the client would read as "never
+arrived" — clients must therefore never release an ID they might still query or resend). An
+unreleased record is never evicted. Rejections of type `store_full` and `conflicting_order_id` are not
+stored. Lifetime ends at venue restart. Tests: `test_reuse_of_released_and_evicted_id_executes_again`,
+`test_unreleased_id_is_never_evicted` in `tests/test_live_local.py`.
+
 Client rules (`quote_gate/live.py`): one outstanding order. No exec within the ack timeout, or a
 disconnect while sent → UNKNOWN; new orders halt; `order_status` is polled (bounded, one query in
 flight per order); the order is never resent. `found=false` from the **same instance** means the

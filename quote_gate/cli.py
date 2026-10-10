@@ -62,6 +62,14 @@ def main(argv=None) -> None:
     v.add_argument("--seed", type=int, default=1)
     v.add_argument("--start-bid", type=int, default=10000)
     v.add_argument("--stats-every", type=float, default=5.0)
+    v.add_argument("--market-seed", type=int, default=None,
+                   help="serve the quant market_sim stream (seed) instead of the M1 generator")
+    v.add_argument("--market-steps", type=int, default=0)
+    v.add_argument("--beta-pct", type=int, default=50)
+    v.add_argument("--fee", type=int, default=0, help="fee ticks per unit for fills")
+    v.add_argument("--drop-ack-every", type=int, default=0,
+                   help="FAULT INJECTION: record outcome but do not send the exec of every Nth order")
+    v.add_argument("--fill-log", default=None, help="write evaluator fill log (JSONL) here on shutdown")
     a = sub.add_parser("aggregator")
     a.add_argument("--venue", action="append", type=_addr, required=True)
     a.add_argument("--host", default="127.0.0.1")
@@ -82,9 +90,23 @@ def main(argv=None) -> None:
     args = p.parse_args(argv)
 
     if args.cmd == "venue":
+        market = None
+        if args.market_seed is not None:
+            from .market_sim import MarketConfig
+            market = MarketConfig(seed=args.market_seed, steps=args.market_steps, beta_pct=args.beta_pct)
         svc = Venue(args.id, seed=args.seed, rate_hz=args.rate, host=args.host,
-                    port=args.port, start_bid_ticks=args.start_bid)
+                    port=args.port, start_bid_ticks=args.start_bid, market=market,
+                    fee_per_unit=args.fee)
+        svc.drop_ack_every = args.drop_ack_every
         asyncio.run(_serve(svc, args.stats_every))
+        if args.fill_log:
+            with open(args.fill_log, "w") as f:
+                f.write(json.dumps({"schema": "qg.venue_fills.v1", "venue_id": svc.venue_id,
+                                    "instance": svc.instance, "orders_received": svc.orders_received,
+                                    "acks_dropped_injected": svc.acks_dropped,
+                                    "fill_log_dropped": svc.fill_log_dropped}) + "\n")
+                for oid, outcome in svc.fill_log:
+                    f.write(json.dumps([oid, outcome]) + "\n")
     elif args.cmd == "aggregator":
         venues = dict(args.venue)
         book = Book(args.symbol, venues, int(args.stale_ms * 1e6))

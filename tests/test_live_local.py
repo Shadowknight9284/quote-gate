@@ -121,6 +121,39 @@ class VenueProtocol(unittest.IsolatedAsyncioTestCase):
         s = await self.c.next()
         self.assertEqual((s["type"], s["found"], s["reason"]), ("status", True, "price_moved"))
 
+    async def test_reuse_of_released_and_evicted_id_executes_again(self):
+        # Documented dedup lifetime: an ID is deduplicated from first receipt until its record is
+        # released by the client AND evicted to make room. After eviction the venue has no memory
+        # of it: the same ID with the same payload is treated as a new order and executes again.
+        self.c.order("o1")
+        await self.c.next()
+        self.c.order("o2")
+        await self.c.next()
+        self.c.send({"type": "release", "client_order_id": "o1"})
+        self.c.order("o3")                                   # store full (2) -> evicts released o1
+        await self.c.next()
+        self.assertEqual(self.v.store.evicted, 1)
+        self.assertIsNone(self.v.store.get("o1"))
+        self.c.send({"type": "order_status", "client_order_id": "o1"})
+        self.assertFalse((await self.c.next())["found"])
+        executed = self.v.orders_executed
+        self.c.send({"type": "release", "client_order_id": "o2"})
+        self.c.order("o1")                                   # same ID, same payload, after eviction
+        e = await self.c.next()
+        self.assertEqual(e["status"], "FILLED")
+        self.assertEqual(self.v.orders_executed, executed + 1)   # executed again: not deduplicated
+
+    async def test_unreleased_id_is_never_evicted(self):
+        self.c.order("o1")
+        await self.c.next()
+        self.c.order("o2")
+        await self.c.next()
+        self.c.order("o3")
+        self.assertEqual((await self.c.next())["reason"], "store_full")
+        self.c.order("o1")                                   # still deduplicated
+        self.assertEqual((await self.c.next())["status"], "FILLED")
+        self.assertEqual(self.v.orders_executed, 2)
+
     async def test_status_query_does_not_execute(self):
         self.c.send({"type": "order_status", "client_order_id": "never"})
         s = await self.c.next()

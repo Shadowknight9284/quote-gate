@@ -1,6 +1,7 @@
 # Tiger Data (optional post-run analytics)
 
-Status: **built and tested without a database; never connected.** No import has been verified
+Status: **built and tested without a database; never connected.** A target has been configured
+privately (identifier kept out of Git); no connection has been made. No import has been verified
 against a real service. The core system, tests and demo do not need any of this.
 
 Pipeline: local artifacts → `quote_gate.importer` (separate process, after runs) → Tiger Data schema
@@ -19,16 +20,25 @@ Needs local artifacts (gitignored); produce them with `quote_gate.bench` / `scri
 2. Create `docs/private/tiger.env` (gitignored, `chmod 600`) from the placeholder-only
    [`db/tiger.env.example`](../db/tiger.env.example). It is parsed as KEY=VALUE by the importer,
    never sourced by a shell; no inline comments; unknown keys are rejected.
-3. `.venv/bin/python -m quote_gate.importer init-schema --confirm`, then `apply --confirm`.
-Do not run step 3 until both safeguards below exist.
+3. Read-only check (each step needs approval for the specific target):
+   `.venv/bin/python -m quote_gate.importer check --confirm` — session forced read-only
+   (`default_transaction_read_only=on`, 10 s statement timeout); runs only catalog SELECTs: server
+   version, TimescaleDB extension version, `create_hypertable` availability, whether schema
+   `quotegate` exists, CREATE privilege, and the pre-existing-object validation below. Prints the
+   sanitized target and results; never prints credentials.
+4. `init-schema --confirm`, then `apply --confirm` (writes; separate approval).
 
-## Unfinished write-safety safeguards (required before any write)
-1. **Conflict detection**: `ON CONFLICT DO NOTHING` alone would keep an old row if a key were reused
-   with different content. The importer must compare existing rows for the run's keys and fail on any
-   difference.
-2. **Pre-existing object validation**: before `create_hypertable`, verify any existing `quotegate.*`
-   table has exactly the expected columns, types and constraints, and stop otherwise.
-   `CREATE TABLE IF NOT EXISTS` is not validation.
+## Write-safety safeguards (implemented; tested without a database)
+1. **Conflict detection** (`find_conflicts`, used by `apply_plan`): before inserting, existing rows
+   for the run's keys are fetched and compared column by column (JSON by value, timestamps exactly,
+   `imported_at` ignored). Any reused key with different content aborts that run's transaction
+   before any INSERT. Identical re-imports are not conflicts.
+2. **Pre-existing object validation** (`validate_existing_schema`, used by `init-schema` and
+   `check`): every existing `quotegate.*` table must have exactly the expected columns, data types,
+   nullability and primary key, and no other relations may exist in the schema; otherwise no DDL runs.
+   `EXPECTED_SCHEMA` is checked against `db/schema.sql` by a test.
+Tests: `tests/test_importer_safeguards.py` (8 tests; disabling either safeguard fails them).
+Not yet verified against a real database.
 
 ## Tables
 | table | kind | content |

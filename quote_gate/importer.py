@@ -219,6 +219,34 @@ def load_tiger_env(path=TIGER_ENV):
             "sslmode": vals.get("PGSSLMODE", "require")}
 
 
+READ_ONLY_CHECK_SQL = [
+    ("server", "SELECT current_database(), current_user, split_part(version(), ' ', 2)"),
+    ("read_only_session", "SHOW transaction_read_only"),
+    ("timescaledb", "SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'"),
+    ("create_hypertable_available", "SELECT count(*) > 0 FROM pg_proc WHERE proname = 'create_hypertable'"),
+    ("quotegate_schema_exists", "SELECT count(*) > 0 FROM pg_namespace WHERE nspname = 'quotegate'"),
+    ("can_create_in_database", "SELECT has_database_privilege(current_user, current_database(), 'CREATE')"),
+]
+
+
+def read_only_check(params) -> dict:
+    """Read-only connection check. Session is forced read-only; only catalog SELECTs are run."""
+    import psycopg      # optional dependency
+    out = {}
+    with psycopg.connect(**params, connect_timeout=10, autocommit=False,
+                         options="-c default_transaction_read_only=on -c statement_timeout=10000") as conn:
+        with conn.cursor() as cur:
+            for name, sql in READ_ONLY_CHECK_SQL:
+                cur.execute(sql)
+                row = cur.fetchone()
+                out[name] = row[0] if row and len(row) == 1 else row
+            cols, pks, others = inspect_existing_schema(cur)
+            out["existing_quotegate_tables"] = sorted(cols)
+            out["schema_problems"] = validate_existing_schema(cols, pks, others)
+        conn.rollback()
+    return out
+
+
 def target_identifier(params):
     """Safe description for reports: no password."""
     return f"{params['user']}@{params['host']}:{params['port']}/{params['dbname']} sslmode={params['sslmode']}"
@@ -255,6 +283,123 @@ INSERTS = {
 }
 COUNT_SQL = {t: f"SELECT count(*) FROM quotegate.{t} WHERE run_id = %s" for t in TABLES}
 
+# ---- Safeguard 1: conflicting reuse of a key with different content ----
+KEYS = {"experiment_runs": "run_id", "latency_samples": "sample_key",
+        "latency_samples_untimed": "sample_key", "venue_events": "event_key",
+        "run_metric_summaries": "metric_key"}
+COMPARE_EXCLUDE = {"imported_at"}
+
+
+def _norm(v):
+    if isinstance(v, str) and v[:1] in "{[":
+        try:
+            return json.loads(v)
+        except ValueError:
+            return v
+    if isinstance(v, float) and v.is_integer():
+        return v
+    return v
+
+
+def find_conflicts(table: str, existing: dict, planned_params: list[dict]) -> list[dict]:
+    """existing: key -> row dict as stored. Returns rows whose key exists with different content.
+
+    Pure. Compared columns: every planned column except COMPARE_EXCLUDE; JSON text and dicts compare
+    by value; timestamps must be equal datetimes.
+    """
+    key = KEYS[table]
+    out = []
+    for row in planned_params:
+        old = existing.get(row[key])
+        if old is None:
+            continue
+        diff = {c: (old.get(c), row[c]) for c in row if c not in COMPARE_EXCLUDE
+                and _norm(old.get(c)) != _norm(row[c])}
+        if diff:
+            out.append({"key": row[key], "diff": {c: [repr(a)[:60], repr(b)[:60]] for c, (a, b) in diff.items()}})
+    return out
+
+
+def fetch_existing(cur, table: str, keys: list) -> dict:
+    key = KEYS[table]
+    cur.execute(f"SELECT * FROM quotegate.{table} WHERE {key} = ANY(%s)", (keys,))
+    cols = [d.name for d in cur.description]
+    return {r[cols.index(key)]: dict(zip(cols, r)) for r in cur.fetchall()}
+
+
+# ---- Safeguard 2: validate pre-existing objects before any DDL / hypertable conversion ----
+# (column, information_schema data_type, is_nullable) in db/schema.sql order; kept in sync by test.
+EXPECTED_SCHEMA = {
+    "experiment_runs": ([("run_id", "text", "NO"), ("label", "text", "NO"), ("git", "text", "YES"),
+                         ("python", "text", "YES"), ("operation", "text", "YES"), ("target", "text", "YES"),
+                         ("placement", "text", "NO"), ("rate_rps", "double precision", "NO"),
+                         ("duration_s", "double precision", "NO"), ("warmup_s", "double precision", "NO"),
+                         ("connections", "integer", "NO"), ("trials", "integer", "NO"),
+                         ("run_started_utc", "timestamp with time zone", "YES"),
+                         ("run_started_source", "text", "YES"), ("source_artifact", "text", "NO"),
+                         ("imported_at", "timestamp with time zone", "NO")], ["run_id"]),
+    "latency_samples": ([("observed_at", "timestamp with time zone", "NO"), ("sample_key", "text", "NO"),
+                         ("run_id", "text", "NO"), ("trial", "integer", "YES"), ("kind", "text", "NO"),
+                         ("venue_id", "text", "YES"), ("value_ns", "bigint", "NO"),
+                         ("schedule_to_completion_ns", "bigint", "YES"), ("schedule_to_send_ns", "bigint", "YES"),
+                         ("outcome", "text", "YES"), ("quote_age_ns", "bigint", "YES"), ("warmup", "boolean", "YES"),
+                         ("observed_mono_ns", "bigint", "NO"), ("observer", "text", "NO")],
+                        ["sample_key", "observed_at"]),
+    "latency_samples_untimed": ([("sample_key", "text", "NO"), ("run_id", "text", "NO"), ("trial", "integer", "YES"),
+                                 ("kind", "text", "NO"), ("venue_id", "text", "YES"), ("value_ns", "bigint", "NO"),
+                                 ("schedule_to_completion_ns", "bigint", "YES"),
+                                 ("schedule_to_send_ns", "bigint", "YES"), ("outcome", "text", "YES"),
+                                 ("quote_age_ns", "bigint", "YES"), ("warmup", "boolean", "YES"),
+                                 ("observed_mono_ns", "bigint", "NO"), ("observer", "text", "YES")], ["sample_key"]),
+    "venue_events": ([("observed_at", "timestamp with time zone", "NO"), ("event_key", "text", "NO"),
+                      ("run_id", "text", "NO"), ("venue_id", "text", "NO"), ("kind", "text", "NO"),
+                      ("detail", "jsonb", "NO"), ("observed_mono_ns", "bigint", "NO"), ("observer", "text", "NO")],
+                     ["event_key", "observed_at"]),
+    "run_metric_summaries": ([("metric_key", "text", "NO"), ("run_id", "text", "NO"), ("trial", "integer", "NO"),
+                              ("source", "text", "NO"), ("metric", "text", "NO"), ("stat", "text", "NO"),
+                              ("value_ns", "bigint", "NO")], ["metric_key"]),
+}
+
+
+def validate_existing_schema(columns: dict, primary_keys: dict, other_objects: list) -> list[str]:
+    """Pure. columns: table -> [(name, data_type, is_nullable)] for tables that already exist in
+    schema quotegate; primary_keys: table -> [cols in key order]; other_objects: names of any other
+    relations in the schema. Returns problems; empty means safe to run the additive DDL."""
+    problems = [f"unexpected object quotegate.{o}" for o in sorted(other_objects)]
+    for t, cols in sorted(columns.items()):
+        if t not in EXPECTED_SCHEMA:
+            problems.append(f"unexpected table quotegate.{t}")
+            continue
+        exp_cols, exp_pk = EXPECTED_SCHEMA[t]
+        if sorted(cols) != sorted(exp_cols):
+            missing = sorted(set(exp_cols) - set(cols))
+            extra = sorted(set(cols) - set(exp_cols))
+            problems.append(f"quotegate.{t}: columns differ (missing {missing}, unexpected {extra})")
+        if list(primary_keys.get(t, [])) != exp_pk:
+            problems.append(f"quotegate.{t}: primary key {primary_keys.get(t)} != {exp_pk}")
+    return problems
+
+
+def inspect_existing_schema(cur) -> tuple[dict, dict, list]:
+    """Read-only catalog queries for schema quotegate."""
+    cur.execute("SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns "
+                "WHERE table_schema = 'quotegate' ORDER BY table_name, ordinal_position")
+    columns = {}
+    for t, c, dt, nl in cur.fetchall():
+        columns.setdefault(t, []).append((c, dt, nl))
+    cur.execute("SELECT kcu.table_name, kcu.column_name FROM information_schema.table_constraints tc "
+                "JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name "
+                "AND tc.table_schema = kcu.table_schema WHERE tc.table_schema = 'quotegate' "
+                "AND tc.constraint_type = 'PRIMARY KEY' ORDER BY kcu.table_name, kcu.ordinal_position")
+    pks = {}
+    for t, c in cur.fetchall():
+        pks.setdefault(t, []).append(c)
+    cur.execute("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'quotegate' AND c.relkind IN ('r','v','m','f','p') ")
+    rels = [r[0] for r in cur.fetchall()]
+    others = [r for r in rels if r not in columns]
+    return columns, pks, others
+
 
 def _db_params(table, row):
     p = dict(row)
@@ -273,6 +418,15 @@ def apply_plan(conn, plan):
     try:
         with conn.transaction():
             with conn.cursor() as cur:
+                conflicts = []
+                for t in TABLES:
+                    if plan[t]:
+                        params = [_db_params(t, r) for r in plan[t]]
+                        existing = fetch_existing(cur, t, [p[KEYS[t]] for p in params])
+                        conflicts += [{"table": t, **c} for c in find_conflicts(t, existing, params)]
+                if conflicts:
+                    raise ImportErrorExplicit(f"{run_id}: {len(conflicts)} conflicting key reuse(s), "
+                                              f"first: {json.dumps(conflicts[0])[:300]}")
                 for t in TABLES:
                     if plan[t]:
                         cur.executemany(INSERTS[t], [_db_params(t, r) for r in plan[t]])
@@ -293,10 +447,17 @@ def apply_plan(conn, plan):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="quote_gate.importer")
-    p.add_argument("cmd", choices=["plan", "verify-local", "init-schema", "apply"])
+    p.add_argument("cmd", choices=["plan", "verify-local", "check", "init-schema", "apply"])
     p.add_argument("--root", default="artifacts")
     p.add_argument("--confirm", action="store_true", help="required for apply")
     a = p.parse_args(argv)
+    if a.cmd == "check":
+        if not a.confirm:
+            sys.exit("check requires --confirm (it opens a read-only connection)")
+        params = load_tiger_env()
+        print(json.dumps({"target": target_identifier(params)}))
+        print(json.dumps(read_only_check(params), indent=1, default=str))
+        return
     if a.cmd == "init-schema":
         if not a.confirm:
             sys.exit("init-schema requires --confirm")
@@ -308,6 +469,11 @@ def main(argv=None):
         with psycopg.connect(**params, connect_timeout=10, autocommit=False,
                              options="-c statement_timeout=60000") as conn:
             with conn.transaction():
+                with conn.cursor() as cur:
+                    problems = validate_existing_schema(*inspect_existing_schema(cur))
+                if problems:
+                    raise ImportErrorExplicit("pre-existing quotegate objects incompatible; no DDL run: "
+                                              + "; ".join(problems)[:500])
                 conn.execute(ddl)
         print(json.dumps({"schema": "quotegate", "status": "ensured"}))
         return
