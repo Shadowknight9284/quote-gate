@@ -77,6 +77,10 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
   ready tasks N1–N3 with contracts, decisions reserved for humans); submission draft updated.
 - Hermes H4 (tests only, `tests/test_l2book_hermes.py`) launched 18:27Z, baseline `1b96b03`.
 
+## 2026-10-10T18:35Z — Codex handoff
+- Nothing in flight; no new Hermes task. State, commands, artifact checksums and approved/blocked
+  actions recorded in `docs/handoff.md` (branch `handoff/codex`). PR #4 left open for human merge.
+
 ## 2026-10-10T18:40Z — PR #3 merged; Hermes H4 accepted (PR #4)
 - PR #3 merged at `8c1d598` → `bce39da`; CI on main: success.
 - H4: only the allowed file returned; 10/10 tests pass; 6/6 mutants killed. Opened as PR #4 for human
