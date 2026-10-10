@@ -89,11 +89,13 @@ class LocalSlice(unittest.IsolatedAsyncioTestCase):
         await wait_until(lambda: self.agg.feed_rtt_log.count >= 2)
         with tempfile.TemporaryDirectory() as d:
             self.agg.dump_artifacts(d)
-            lines = open(os.path.join(d, "feed_rtt.jsonl")).read().splitlines()
+            with open(os.path.join(d, "feed_rtt.jsonl")) as f:
+                lines = f.read().splitlines()
             hdr = json.loads(lines[0])
             self.assertEqual(hdr["schema"], "qg.feed_rtt.v1")
             self.assertEqual(hdr["retained"], len(lines) - 1)
-            ev = open(os.path.join(d, "venue_events.jsonl")).read().splitlines()
+            with open(os.path.join(d, "venue_events.jsonl")) as f:
+                ev = f.read().splitlines()
             self.assertEqual(json.loads(ev[0])["schema"], "qg.venue_events.v1")
             self.assertGreaterEqual(len(ev), 3)      # header + connect A + connect B (+ status)
 

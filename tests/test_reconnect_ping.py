@@ -58,6 +58,35 @@ class RapidReconnect(unittest.IsolatedAsyncioTestCase):
         await v.stop()
 
 
+class StopAndFairness(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_returns_with_open_idle_client(self):
+        agg = Aggregator(Book("SYN1", ["A"], 50_000_000), {"A": ("127.0.0.1", 9)})
+        port = await agg.start()
+        r, w = await asyncio.open_connection("127.0.0.1", port)
+        await wait_until(lambda: agg.clients == 1)
+        await asyncio.wait_for(agg.stop(), 3)            # previously hung (Python 3.12 wait_closed)
+        self.assertEqual(await asyncio.wait_for(r.read(), 2), b"")
+        w.close()
+
+    async def test_flooding_client_does_not_starve_event_loop(self):
+        v = Venue("A", rate_hz=500)
+        vport = await v.start()
+        agg = Aggregator(Book("SYN1", ["A"], 50_000_000), {"A": ("127.0.0.1", vport)})
+        port = await agg.start()
+        await wait_until(lambda: agg.book.venues["A"].accepted >= 5)
+        r, w = await asyncio.open_connection("127.0.0.1", port)
+        w.write(b"".join(protocol.encode({"type": "route", "side": "buy", "quantity": 1}) for _ in range(50_000)))
+        longest, last, t0 = 0.0, time.monotonic(), time.monotonic()
+        while time.monotonic() - t0 < 0.4:
+            await asyncio.sleep(0.001)
+            now = time.monotonic()
+            longest, last = max(longest, now - last), now
+        self.assertLess(longest, 0.02)     # loop keeps cycling; before the fix stalls grew with the flood
+        w.transport.abort()
+        await agg.stop()
+        await v.stop()
+
+
 class PingBookkeeping(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self._saved = (agg_mod.PING_INTERVAL_S, agg_mod.PING_TIMEOUT_S)

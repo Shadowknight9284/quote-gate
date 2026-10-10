@@ -77,6 +77,7 @@ class Aggregator:
         self.stale_detect_ns = Samples(EVENT_CAPACITY)
         self.feed_errors = {v: {} for v in venue_addrs}
         self.clients = 0
+        self._client_writers: set = set()
         self.refused_clients = 0
         self.requests = 0
         self.bad_requests = 0
@@ -93,14 +94,23 @@ class Aggregator:
         return self.port
 
     async def stop(self) -> None:
-        """Stop accepting clients, cancel feeds; in-flight route replies are abandoned."""
+        """Stop accepting clients, close client connections, cancel feeds.
+
+        In-flight route replies are abandoned. Client connections are aborted explicitly because
+        Server.wait_closed() waits for every active connection (Python 3.12); the wait is bounded.
+        """
         if self._server:
             self._server.close()
+        for w in list(self._client_writers):
+            w.transport.abort()
         for t in self._tasks:
             t.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         if self._server:
-            await self._server.wait_closed()
+            try:
+                await asyncio.wait_for(self._server.wait_closed(), 2.0)
+            except asyncio.TimeoutError:
+                self._count_stop_timeout = True
         if self.artifact_dir:
             self.dump_artifacts(self.artifact_dir)
 
@@ -235,6 +245,7 @@ class Aggregator:
             writer.transport.abort()
             return
         self.clients += 1
+        self._client_writers.add(writer)
         try:
             while True:
                 obj = await asyncio.wait_for(protocol.read_frame(reader), CLIENT_IDLE_TIMEOUT_S)
@@ -242,10 +253,14 @@ class Aggregator:
                     break
                 writer.write(protocol.encode(self._handle_request(obj)))
                 await writer.drain()
+                # Fairness: a client with many buffered requests must not starve the feed readers
+                # (read_frame and drain return without yielding while data/buffer space is available).
+                await asyncio.sleep(0)
         except (protocol.FrameError, ConnectionError, OSError, asyncio.TimeoutError):
             pass
         finally:
             self.clients -= 1
+            self._client_writers.discard(writer)
             writer.transport.abort()
 
     def _handle_request(self, obj: dict) -> dict:
