@@ -96,6 +96,9 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         self.sql.append(sql)
+        if sql.startswith("SELECT count(*)"):
+            self._rows = [(0,)]
+            return
         if sql.startswith("SELECT * FROM quotegate.run_metric_summaries"):
             cols = list(Conflicts.ROW)
             self.description = [type("D", (), {"name": c})() for c in cols]
@@ -109,6 +112,9 @@ class FakeCursor:
 
     def fetchall(self):
         return self._rows
+
+    def fetchone(self):
+        return self._rows[0]
 
 
 class FakeConn:
