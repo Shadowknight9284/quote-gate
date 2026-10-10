@@ -17,11 +17,12 @@ a person independently re-ran it; nothing has reached that level yet.
 | Strategy-known vs evaluator-authoritative accounting | tested locally | `backtest.py` |
 | Networked order path (order/exec/status/release), bounded idempotent store | tested locally (loopback) | `venue.py`, `execution.py`, `live.py` |
 | UNKNOWN on timeout/disconnect, status reconciliation, lost-record handling | tested locally (loopback) | `live.py`, `tests/test_live_local.py` |
-| Order path across VMs | planned (not approved) | — |
+| Order path across VMs (venue on second VM, normal + dropped-ack) | tested across VMs (one run each, C3) | `docs/benchmarks.md` C3 |
 | Second execution venue in live runner | planned | `live.py` (`exec_venues`) |
 | Tiger Data importer (plan / verify-local) | tested locally without a database | `importer.py`, `normalize.py` |
 | Tiger Data write safeguards (conflict detection, pre-existing schema validation) | tested locally without a database | `importer.py`, `tests/test_importer_safeguards.py` |
-| Tiger Data read-only check / schema init / import | implemented, never run (awaiting approval) | `importer.py`, `db/` |
+| Tiger Data read-only check | run once against the configured target: read-only session verified; TimescaleDB 2.30.2; schema `quotegate` absent; CREATE privilege present | `importer.py` |
+| Tiger Data schema init / import | implemented, never run (awaiting approval) | `importer.py`, `db/` |
 | Order path with venue as a separate process (loopback) | tested locally | `cli venue --market-seed`, `live --venue` |
 | Two-page paper | implemented (compiles, 2 pages) | `paper/quotegate.tex` |
 
@@ -42,10 +43,10 @@ commands shown; M3 artifacts exist only on the developer machine.
 | Live loopback: 1217/1217 orders resolved by exec; ledger == venue fill log; exec RTT p50 ≈ 53 µs | `4b0ec45`, seed 101, 2000 steps | `python3 -m quote_gate.live --steps 2000` | tested locally | venue and aggregator in one event loop; RTT not comparable to cross-host |
 | Dropped ack / disconnect after exec / venue restart behave per contract O1 | `4b0ec45` | `python3 -m unittest tests.test_live_local` | tested locally | loopback; fault hooks are injected |
 | Separate-process loopback: normal 3012/3012 filled, exec RTT p50 ≈ 130 µs; drop-ack-every-50: 21 timeouts → 21 resolved by status, ≈301 ms to reconciled outcome; ledger == venue fill log in both | pre-C3 rehearsal | `cli venue --market-seed 101 ...` + `live --venue 127.0.0.1:19105` | tested locally | same VM; not comparable to the single-process 53 µs figure (process boundary added) |
+| C3 cross-VM order path: 3012/3012 filled (normal), 21/21 dropped acks recovered by status (≈302 ms), ledger == venue fill log, no duplicate executions, max abs position 5; exec RTT p50 649 µs remote vs 132 µs separate-process local | `982cc03`, task c3-20261010T171636Z | `scripts/remote_venue.sh` + `quote_gate.live --venue` + `--reconcile` | tested across VMs | one seed, one run each; same LAN, possibly same physical host; application RTT |
 | Dedup lifetime: until released **and** evicted; evicted ID re-executes | current | `tests/test_live_local.py` | tested locally | in-memory; not restart-safe |
 
 ## Known gaps
-- Order path not run across processes on different VMs (not approved).
 - Coordinator restart loses all strategy/ledger/pending-order state (in memory).
 - Venue order store is in memory; dedup is not restart-safe.
 - Tiger Data: safeguards implemented but never exercised against a real database.

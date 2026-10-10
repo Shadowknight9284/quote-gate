@@ -21,9 +21,10 @@ To avoid overlapping editors: claim a file in this table (via a commit) before c
 | M4 | Event log, freshness monitor, faults under load, saturation sweep | Claude | benchmarked (loopback) |
 | Q1 | Quant slice + deterministic backtest + 5-cell matrix | Claude | tested locally |
 | C1 | Networked order path, loopback, one execution venue | Claude | tested locally (loopback) |
-| C2 | Second execution venue in live runner | — | planned |
+| C2 | Second execution venue in live runner | — | planned (deferred) |
+| C3 | Order path with venue on second VM (normal + dropped-ack) | Claude | tested across VMs (one run each) |
 | P1 | Two-page paper | Claude | implemented (compiles); citations need human check |
-| E1 | Tiger Data schema/queries/importer | Claude | tested locally without DB; blocked on credentials + 2 safeguards |
+| E1 | Tiger Data schema/queries/importer | Claude | safeguards tested without DB; read-only check run; schema/import awaiting approval |
 
 ## Hermes tasks (delegated; accepted artifacts listed separately)
 | ID | Task | Outcome | Accepted artifact |

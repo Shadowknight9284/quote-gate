@@ -91,3 +91,40 @@ Saturation sweep (time-boxed; one loopback trial per rate, 4 s, 1 s warm-up, 16 
 Completed throughput plateaus near 45k route lookups/s with the bench client and aggregator
 (both single-threaded Python) on the same VM; the bottleneck was not isolated. Freshness
 violations 0 at every rate. Not a capacity claim; single trials.
+
+## C3: networked order path, venue on a second VM (2026-10-10)
+Revision `982cc03` (runtime checksums verified on both hosts). One run per configuration, market
+seed 101, β = 0.5, 500 quotes/s, fee 1, frozen policy (θ = 2000 bp, q_max = 5, max order 5,
+cooldown 0), ack timeout 0.2 s, status interval 0.1 s. Admission window 10 s (decisions/orders only
+inside it), then 2 s settle with no new orders.
+
+Placements: **local** = venue process and aggregator+runner process, both on the coding VM
+(separate processes, loopback). **remote** = venue process on the second VM (same LAN), aggregator
++runner on the coding VM. Only the venue's host changed. ICMP reference coding VM → second VM:
+avg 0.764 ms before, 0.780 ms after (50 pings each).
+
+Every run saw reference events 1–5000 (no gaps, one connection, no feed rejects).
+
+| | local normal | local drop-ack/50 | remote normal | remote drop-ack/50 |
+|---|---|---|---|---|
+| order decisions / orders sent | 3297 / 3012 | 1183 / 1080 | 3297 / 3012 | 1179 / 1076 |
+| filled / rejected | 3012 / 0 | 1080 / 0 | 3012 / 0 | 1076 / 0 |
+| resolved by exec / by status | 3012 / 0 | 1059 / 21 | 3012 / 0 | 1055 / 21 |
+| timeouts (UNKNOWN) / injected ack drops | 0 / 0 | 21 / 21 | 0 / 0 | 21 / 21 |
+| unresolved after settle / lost records | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| decisions blocked: outstanding / halted UNKNOWN | 0 / 0 | 2100 / 1057 | 0 / 0 | 2095 / 1066 |
+| exec RTT p50/p95/p99 µs (n) | 131.6/168.4/196.4 (3012) | 133.3/179.5/203.7 (1059) | 648.8/845.5/933.4 (3012) | 619.0/816.9/920.4 (1055) |
+| time to reconciled outcome p50/max ms (n) | — (0) | 301.5/302.3 (21) | — (0) | 302.0/302.5 (21) |
+| feed ping RTT p50/p95 µs (n) | 124.7/169.3 (119) | 119.2/158.1 (119) | 690.1/972.1 (119) | 669.7/998.4 (119) |
+| stale transitions / feed errors | 0 / none | 0 / none | 0 / none | 0 / none |
+| ledger vs venue fill log | equal (3012) | equal (1080) | equal (3012) | equal (1076) |
+| duplicate executions / max abs position (venue-derived) | 0 / 5 | 0 / 5 | 0 / 5 | 0 / 5 |
+
+Definitions: **exec RTT** = aggregator monotonic time from writing the order frame to reading its
+`exec` frame, for orders resolved directly by exec (application-level: includes Python asyncio on both
+hosts and queueing behind quotes already in the venue's socket buffer; not pure network latency).
+**Time to reconciled outcome** = order written → outcome applied via `order_status` (here = 0.2 s ack
+timeout + first 0.1 s status poll). Feed ping RTT is the separate feed-connection measure; p99 omitted
+where n < 1000. Drop-ack runs diverge slightly in decisions (1080 vs 1076 orders) because blocking
+windows depend on arrival timing, although market exposure was identical.
+Single seed, single run per configuration: not a general performance result.

@@ -1,7 +1,9 @@
 # Tiger Data (optional post-run analytics)
 
 Status: **built and tested without a database; never connected.** A target has been configured
-privately (identifier kept out of Git); no connection has been made. No import has been verified
+privately (identifier kept out of Git). One approved read-only check has run (2026-10-10):
+session verified read-only; PostgreSQL 18.6; TimescaleDB 2.30.2 with `create_hypertable`;
+schema `quotegate` absent (no pre-existing objects); CREATE privilege present. No DDL or writes yet. No import has been verified
 against a real service. The core system, tests and demo do not need any of this.
 
 Pipeline: local artifacts → `quote_gate.importer` (separate process, after runs) → Tiger Data schema
