@@ -165,11 +165,13 @@ directly comparable.
   (`docs/delegation-log.md`).
 
 ## 7. What was built during the event
-HackRU Fall 2026 runs October 10–11, 2026 (track document). The team reports that the event started
-at 10:00 on Saturday, October 10; taken as US Eastern time (EDT, UTC−4), that is 2026-10-10T14:00Z.
-The repository's first commit, `396f2d8`, is at 2026-10-10T15:21:46Z (11:21 EDT; README and
-`.gitignore` only), and all code, tests, documentation and the paper were committed after it.
-Everything in this repository was built during the event; no pre-existing project code was reused.
+HackRU Fall 2026 runs October 10–11, 2026 (track document).
+
+The team reports an event start of 10:00 EDT on October 10, 2026
+(14:00 UTC). The repository’s first commit is timestamped
+15:21:46 UTC that day, after that reported start. Commit timestamps
+alone do not establish when all underlying work was created;
+event eligibility remains subject to the official HackRU rules.
 
 ## 8. Known limitations and next bottleneck
 - The synthetic experiment uses a planted signal; results are not evidence of real-market
