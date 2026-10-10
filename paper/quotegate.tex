@@ -57,7 +57,8 @@ so there is no cross-venue arbitrage. Sizes are uniform on $\{1..100\}$. With pr
 price moves one tick, up with probability $(1+\beta I_t)/2$: $\beta=0$ is the \emph{null} regime,
 $\beta=0.5$ the \emph{controlled} regime, an illustrative assumption. $I_t$ is observable at step $t$
 and affects only $p_{t+1}-p_t$ (verified by test). Market randomness is independent of faults and of
-the strategy, so every configuration sees the identical quote stream per seed.
+the strategy: per seed, all controlled-regime configurations see the identical quote stream, and the
+null regime uses the same random draws with $\beta$-dependent price moves.
 
 Orders are immediate-or-cancel limits at the observed price (buy at ask, sell at bid), routed to one
 venue. On arrival the venue checks session, current executable price (buy fills at ask $\le$ limit,
@@ -104,7 +105,7 @@ Cell & Fills & Turnover & Gross & Net & Gross/unit & Hit \\
 \addplot[dashed,domain=-9500:-6700] {x};
 \end{axis}
 \end{tikzpicture}
-\caption{Each point is one seed with the identical quote stream in both regimes. All 30 lie above
+\caption{Each point pairs one seed across the null and controlled regimes (same random draws). All 30 lie above
 $y=x$ (paired gain $1592\pm107$) yet all remain below zero.}
 \end{figure}
 
@@ -122,8 +123,8 @@ are not better execution. Under faults the policy held through 449 stale steps a
 steps on 100 unknown outcomes per seed; after reconciliation every venue fill was booked exactly
 once except 11 fills belonging to orders unresolved at run end (8 unknown, the rest with
 acknowledgements in flight): the strategy-known ledger then differs from the authoritative one on
-11 seeds (total net difference 20 ticks), and results use the authoritative ledger. 21 of 30 seeds end
-with open inventory, valued hypothetically as above.
+11 seeds (total net difference 20 ticks), and results use the authoritative ledger. Under faults, 14 of 30
+seeds end with open inventory, valued hypothetically as above.
 
 \section{Systems result (separate population)}
 The same policy, order protocol and ledger also ran over the networked transport (one seed, 10\,s
