@@ -1,0 +1,19 @@
+# Delegation log
+
+## T1 synthetic generator — accepted
+- Contract: `docs/contracts/T1-synthetic.md`. Allowed files: `quote_gate/synthetic.py`, `tests/test_synthetic.py`.
+- Remote workspace: isolated per-task dir on the Hermes VM (not the Hermes install, not this repo); baseline commit `66d4aaf` containing only contract + empty package files.
+- Invocation: `tools/hermes_task.sh run` — `hermes chat -Q --ignore-rules --max-turns 20 --run-budget 120|150`, external `timeout` = budget + 60 s. No `--yolo`.
+- Limitation: `--in` is not a sandbox; Hermes runs as the general user account on that VM.
+- Attempt 0: both files returned (new files present in patch, only allowed paths). Review: `iter_quotes` was a generator function (lazy validation, failing its own test); `isinstance` accepted bool; duplicate import; `sys.path` hack in tests.
+- Repair 1 (of max 2): fixed eager validation, bool rejection, sys.path hack, added prefix/bool tests. Duplicate `typing` import remained; removed locally by Claude at integration along with trailing whitespace.
+- Local verification: Claude-authored `tests/acceptance/test_synthetic_acceptance.py` (reference draw-order re-implementation) 6/6 pass; full suite 36/36 pass.
+
+## T2 report formatter — rejected after 2 repairs; implemented locally by Claude
+- Contract: `docs/contracts/T2-report.md`. Allowed files: `quote_gate/report.py`, `tests/test_report.py`.
+  Baseline `f1e502d`. Budget 180 s, max 25 turns, external timeout 240 s.
+- Attempt 0: latency cells lacked " / " spacing; missing metric rendered "n/a/n/a/n/a"; gen-lag cell lacked `*`. Its own 7 tests passed (did not cover these).
+- Repair 1: fixed spacing and `*`, but regressed the fixed header; missing-metric not fixed; whitespace not removed despite report claiming so.
+- Repair 2: header restored; missing-metric still wrong; 3 of its own tests failing while report said requirements satisfied.
+- Outcome: patch not applied. Claude wrote `quote_gate/report.py`; verified by `tests/acceptance/test_report_acceptance.py` (5/5).
+- Lesson: Hermes reports are not evidence; exact-format tasks need the acceptance test shipped with the task.
