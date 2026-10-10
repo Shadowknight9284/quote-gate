@@ -215,6 +215,37 @@ class Backtest(unittest.TestCase):
         self.assertEqual(sum(f.signed_qty for f in led.fills.values()), led.position)
         self.assertLessEqual(r.max_abs_position, self.P.q_max)
 
+    def test_timing_fill_uses_decision_step_quote_without_delay(self):
+        quotes = {s.t: s.quotes[0] for s in generate(self.M)}
+        r = bt.run(self.M, self.P, bt.ExecConfig())
+        for f in list(r.ledger.fills.values())[:50]:
+            self.assertEqual(f.step, f.decision_ref)
+            q = quotes[f.step]
+            if f.venue_id == "A":
+                self.assertEqual(f.price_ticks, q.ask_ticks if f.signed_qty > 0 else q.bid_ticks)
+
+    def test_signal_predicts_next_move_not_current(self):
+        # beta near 1: imbalance at t must predict p_{t+1} - p_t (not p_t - p_{t-1}).
+        steps = list(generate(replace(self.M, steps=4000, beta_pct=99, move_prob_pct=100)))
+        nxt = cur = n = 0
+        for a, b, c in zip(steps, steps[1:], steps[2:]):
+            imb = imbalance_bp(b.quotes[0].bid_quantity, b.quotes[0].ask_quantity)
+            if abs(imb) > 5000:
+                n += 1
+                nxt += (imb > 0) == (c.latent_price > b.latent_price)
+                cur += (imb > 0) == (b.latent_price > a.latent_price)
+        self.assertGreater(n, 500)
+        self.assertGreater(nxt / n, 0.75)            # P(up|imb>0.5) >= (1+0.99*0.5)/2 ~ 0.75
+        self.assertLess(abs(cur / n - 0.5), 0.05)    # no relation to the move that already happened
+
+    def test_ledger_matches_venue_record_after_reconciliation(self):
+        r = bt.run(self.M, self.P, bt.ExecConfig(drop_ack_pct=40, fault_seed=2, ack_timeout_steps=3,
+                                                 reconcile_after_steps=4))
+        rec = r.reconciliation
+        self.assertEqual((rec["ledger_fills_not_at_venue"], rec["mismatched"]), (0, 0))
+        self.assertTrue(rec["unbooked_all_unresolved"])
+        self.assertEqual(rec["venue_fills"], rec["ledger_fills"] + rec["unbooked_venue_fills"])
+
     def test_stale_reference_blocks_orders(self):
         r = bt.run(self.M, self.P, bt.ExecConfig(outage_every=100, outage_len=50, stale_after_ns=15_000_000))
         self.assertGreater(r.decisions.get("no_signal", 0), 0)

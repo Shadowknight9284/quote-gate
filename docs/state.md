@@ -33,3 +33,12 @@ Evidence store (E1): schema/queries/importer built; tested without a database on
 Open: coordinator-restart semantics (aggregator state is
 in-memory only: restart loses all venue state and counters; every venue starts at
 NO_QUOTE in a new epoch), execution (M5).
+
+## Quant slice integration status (2026-10-10)
+- A. Pure quant tests: implemented and tested (`tests/test_quant.py`, `tests/test_ledger_hermes.py`).
+- B. In-process event-driven backtest: implemented and tested; frozen 5-cell matrix run on seeds
+  101–130 (`python3 -m quote_gate.experiments`), reported in `paper/quotegate.tex`.
+- C. Networked strategy-to-venue execution: **not implemented**. Nothing in A or B exercises the TCP
+  venue transport for orders.
+Execution model (approved): IOC limit at observed price; venue validates session, current executable
+price (buy at ask ≤ limit, sell at bid ≥ limit) and displayed size; full fill or rejection.

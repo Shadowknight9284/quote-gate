@@ -58,7 +58,9 @@ def run_cell(name, beta_pct, xcfg):
                          "marks_missing": r.marks_missing, "rejections": r.rejections,
                          "unknown": r.unknown, "reconciled": r.reconciled,
                          "halted_unknown_at_end": f["halted_unknown_at_end"],
-                         "decisions": r.decisions, "hit": r.hit, "hit_n": r.hit_n})
+                         "decisions": r.decisions, "hit": r.hit, "hit_n": r.hit_n,
+                         "orders_sent": r.orders_sent, "reconciliation": r.reconciliation,
+                         "liquidation_fee": f["liquidation_fee_ticks"]})
     agg = {k: _stats([s[k] for s in per_seed]) for k in
            ("fills", "turnover", "fees", "gross", "net", "spread_cost_halfticks", "max_abs_position",
             "max_drawdown", "unknown", "marks_missing")}
@@ -72,6 +74,17 @@ def run_cell(name, beta_pct, xcfg):
             rej[k] = rej.get(k, 0) + v
     agg["rejections_total"] = rej
     agg["open_position_seeds"] = sum(1 for s in per_seed if s["open_position"])
+    agg["orders_sent"] = _stats([s["orders_sent"] for s in per_seed])
+    sent, nrej = sum(s["orders_sent"] for s in per_seed), sum(sum(s["rejections"].get(k, 0) for k in
+                     ("price_moved", "insufficient_quantity", "session", "conflicting_order_id"))
+                     for s in per_seed)
+    agg["venue_rejection_rate"] = round(nrej / sent, 4) if sent else None
+    agg["reconciliation"] = {
+        "unbooked_venue_fills": sum(s["reconciliation"]["unbooked_venue_fills"] for s in per_seed),
+        "unbooked_all_unresolved": all(s["reconciliation"]["unbooked_all_unresolved"] for s in per_seed),
+        "ledger_fills_not_at_venue": sum(s["reconciliation"]["ledger_fills_not_at_venue"] for s in per_seed),
+        "mismatched": sum(s["reconciliation"]["mismatched"] for s in per_seed),
+        "halted_unknown_at_end": sum(s["halted_unknown_at_end"] for s in per_seed)}
     return {"cell": name, "beta_pct": beta_pct, "exec": asdict(xcfg), "aggregate": agg, "per_seed": per_seed}
 
 
@@ -83,7 +96,18 @@ def main(argv=None):
     out = {"run_id": run_id, "seeds": list(SEEDS), "steps": STEPS, "policy": asdict(POLICY),
            "market": asdict(MarketConfig(seed=0, steps=STEPS)), "fee_per_unit": FEE,
            "cells": [run_cell(n, b, x) for n, (b, x) in CELLS.items()]}
+    cells = {c["cell"]: c for c in out["cells"]}
+    paired = {}
+    for name in ("3_controlled", "4_controlled_delay", "5_controlled_fault"):
+        for metric in ("gross", "net"):
+            d = [x[metric] - y[metric] for x, y in zip(cells[name]["per_seed"], cells["2_null"]["per_seed"])]
+            paired[f"{name}-2_null:{metric}"] = {**_stats(d), "frac_positive": round(sum(v > 0 for v in d) / len(d), 3)}
+    out["paired_vs_null"] = paired
     os.makedirs(a.out, exist_ok=True)
+    with open(os.path.join(a.out, run_id + ".fig.dat"), "w") as f:
+        f.write("seed null_gross ctrl_gross null_net ctrl_net\n")
+        for x, y in zip(cells["2_null"]["per_seed"], cells["3_controlled"]["per_seed"]):
+            f.write(f"{x['seed']} {x['gross']} {y['gross']} {x['net']} {y['net']}\n")
     path = os.path.join(a.out, run_id + ".json")
     with open(path, "w") as f:
         json.dump(out, f, indent=1)
@@ -94,7 +118,12 @@ def main(argv=None):
                           "hit_rate": g["hit_rate"], "frac_gross_pos": g["frac_seeds_gross_pos"],
                           "max_abs_pos_max": g["max_abs_position"]["max"],
                           "drawdown_mean": g["max_drawdown"]["mean"], "unknown_mean": g["unknown"]["mean"],
-                          "rejections": g["rejections_total"], "open_pos_seeds": g["open_position_seeds"]}))
+                          "rejections": g["rejections_total"], "open_pos_seeds": g["open_position_seeds"],
+                          "orders_sent_mean": g["orders_sent"]["mean"] if g["orders_sent"] else 0,
+                          "turnover_mean": g["turnover"]["mean"], "venue_rej_rate": g["venue_rejection_rate"],
+                          "recon": g["reconciliation"]}))
+    for k, v in paired.items():
+        print(json.dumps({"paired": k, **v}))
     print(json.dumps({"saved": path}))
 
 

@@ -41,7 +41,7 @@ This is not a clean bill of health and not a security audit result.
   attributed it to "test expectations", but the test asserts the contract formula.
 - Outcome: patch not applied. Claude wrote `quote_gate/normalize.py`; 11/11 acceptance tests pass.
 
-## H1 ledger regression tests (Hermes) — partially accepted (13 of 14), 0 repairs
+## H1 ledger regression tests (Hermes) — partially accepted: 13 tests retained, one rejected, two out-of-scope files discarded; 0 repairs
 - Contract: Accounting section of `docs/contracts/Q1-quant.md`; allowed file `tests/test_ledger_hermes.py`.
   Baseline `1267762`; budget 240 s, 25 turns.
 - Scope violation: also created `debug_ledger.py`, `debug_specific.py` (not applied).
@@ -50,3 +50,6 @@ This is not a clean bill of health and not a security audit result.
   mention the failure.
 - Remaining 13 tests killed 5/5 injected ledger mutants (fee sign, duplicate check, short realized
   sign, FIFO→LIFO, limit off-by-one). Accepted with a provenance docstring.
+- Note: writing files outside the allowed path shows the task workspace does not enforce access
+  isolation; the test patch itself does not establish isolation. Independent review and mutation
+  checks remain required.

@@ -102,6 +102,7 @@ class Result:
     spread_cost_halfticks: int = 0
     hit: int = 0
     hit_n: int = 0
+    orders_sent: int = 0
     final: dict = field(default_factory=dict)
 
 
@@ -168,6 +169,7 @@ def run(mcfg: MarketConfig, pcfg: PolicyConfig, xcfg: ExecConfig) -> Result:
                     o = Order(f"o{t}", d.venue_id, intent.side, intent.qty, d.price_ticks,
                               d.connection_epoch, t)
                     orders[o.order_id] = o
+                    res.orders_sent += 1
                     strat.on_sent(o.order_id)
                     sent_at[o.order_id] = t
                     in_flight.setdefault(t + xcfg.exec_delay_steps, []).append(o)
@@ -210,6 +212,20 @@ def run(mcfg: MarketConfig, pcfg: PolicyConfig, xcfg: ExecConfig) -> Result:
     mark = led.mark_price(qa.bid_ticks, qa.ask_ticks) if qa else None
     eq = led.equity_ticks(mark)
     liq_fee = xcfg.fee_per_unit * abs(led.position)
+    # Venue record vs ledger after reconciliation: every venue fill must be booked exactly once,
+    # except fills whose outcome is still UNKNOWN at the end (reported, never invented).
+    venue_fills = {r["fill"].fill_id: r["fill"] for v in venues.values()
+                   for _, r in v.orders.values() if r["status"] == "FILLED"}
+    unbooked = [f for fid, f in venue_fills.items() if fid not in led.fills]
+    phantom = [fid for fid in led.fills if fid not in venue_fills]
+    mismatched = [fid for fid, f in led.fills.items() if fid in venue_fills and venue_fills[fid] != f]
+    unresolved_ids = set(strat.halted_unknown) | ({strat.outstanding} if strat.outstanding else set())
+    res.reconciliation = {
+        "venue_fills": len(venue_fills), "ledger_fills": len(led.fills),
+        "unbooked_venue_fills": len(unbooked),
+        "unbooked_all_unresolved": all(f.order_id in unresolved_ids for f in unbooked),
+        "unbooked_signed_qty": sum(f.signed_qty for f in unbooked),
+        "ledger_fills_not_at_venue": len(phantom), "mismatched": len(mismatched)}
     res.final = {
         "position": led.position, "cash_ticks": led.cash_ticks, "fees_ticks": led.fees_ticks,
         "realized_gross_ticks": led.realized_gross_ticks,
@@ -220,6 +236,7 @@ def run(mcfg: MarketConfig, pcfg: PolicyConfig, xcfg: ExecConfig) -> Result:
         "gross_if_liquidated_ticks": None if eq is None else eq + led.fees_ticks,
         "halted_unknown_at_end": len(strat.halted_unknown),
         "outstanding_at_end": strat.outstanding is not None,
+        "liquidation_fee_ticks": liq_fee,
     }
     res.ledger = led
     return res
