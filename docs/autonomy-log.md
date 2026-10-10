@@ -80,3 +80,8 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
 ## 2026-10-10T18:35Z — Codex handoff
 - Nothing in flight; no new Hermes task. State, commands, artifact checksums and approved/blocked
   actions recorded in `docs/handoff.md` (branch `handoff/codex`). PR #4 left open for human merge.
+
+## 2026-10-10T18:40Z — PR #3 merged; Hermes H4 accepted (PR #4)
+- PR #3 merged at `8c1d598` → `bce39da`; CI on main: success.
+- H4: only the allowed file returned; 10/10 tests pass; 6/6 mutants killed. Opened as PR #4 for human
+  merge (merge authority in this session covered PRs #1–#3 only).

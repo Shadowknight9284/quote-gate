@@ -1,10 +1,23 @@
-# Handoff (for Codex or any coding agent) — 2026-10-10T18:35Z
+# Handoff: current consolidation and historical snapshot
 
-Read `AGENTS.md` first (rules, code map, invariants). This file records the exact state at handoff,
-how to reproduce everything, where local artifacts are, and what is approved vs blocked.
+Read `AGENTS.md` first (rules, code map, invariants). Current status below supersedes the historical snapshot. Commands and artifact checksums
+remain available for reproduction; the blocked-action list remains in force.
 All results are agent-verified only; nothing is human verified.
 
-## Repository state at handoff
+## Current consolidation state (2026-10-10)
+- Main includes PRs #1–#3 and PR #4 (H4), merged at `3095818` after verifying head `24b1c56`.
+  H4 is complete and merged: 10/10 accepted tests; historical review recorded 6/6 mutants killed
+  in [delegation-log.md](delegation-log.md). Current suite: 205 tests across 19 test modules/files,
+  verified with `python3 -m unittest discover -s tests -t .` and the CI collection assertion.
+- PR #5 (this handoff) and PR #6 (quick demo) are being consolidated under explicit human
+  authorization; merges require green CI on exact heads and inspection of main's merge CI.
+- Codex is the sole implementation agent. No delegated task is active. Current work is this
+  local consolidation; no new features are being started.
+- For future delegated work, preserve the reviewed procedure: allowed-path check, scratch apply,
+  independent tests, mutation check, and review records. Do not launch Hermes in this checkout.
+
+## Historical repository snapshot — reported 2026-10-10T18:35Z
+The following table records the original handoff, not current branch or PR state.
 | Item | Value |
 |---|---|
 | Remote | `github.com/Shadowknight9284/quote-gate` |
@@ -16,16 +29,19 @@ All results are agent-verified only; nothing is human verified.
 | Other remote branches | `publish/m1-m4` @ `883562a`, `feat/coinbase-replay` @ `136f2b9`, `docs/submission` @ `8c1d598` — all merged; safe to delete only with human approval |
 | Local-only branches (never push) | `local/unsanitized-main`, `local/full-history-20261010` @ `720b0e0` (contain private deployment details in history; no upstream); `pr-1` @ `b15602e` (sanitized, unused) |
 
-## Processes and in-flight work
-- In flight: **none**. Last Hermes task (H4) finished and is in PR #4. No new Hermes task launched.
-- Local processes: none (no `quote_gate`, capture, benchmark or Hermes runner running).
-- Delegation VM: no `quote_gate` Python processes, no Hermes runs, port 19102 not listening.
+## Historical process report — not a current remote inspection
+- At the original handoff, no work was reported in flight; H4 had finished and was in PR #4.
+- Original local report: no `quote_gate`, capture, benchmark or Hermes runner running. Local
+  inspection during consolidation found no such background tasks before testing.
+- Delegation VM: the last reported verification at the original handoff found no `quote_gate`
+  Python processes, no Hermes runs, and port 19102 not listening. Codex has not rechecked this
+  machine; no remote access was initiated for consolidation.
   Leftover task workspaces `~/qg-tasks/{T1-synthetic,T2-report,T3-normalize,A1-audit,H1-ledger-tests,
   H2-order-tests,H4-l2book-tests}` and venue dirs `~/qg-venue/{m3-…,c3-…}` are inert files (kept).
 
 ## Exact commands (repo root, Python 3.12, standard library only)
 ```
-# core tests (CI runs the same plus a collection check; expect "OK", 195 tests on main)
+# core tests (CI runs the same plus a collection check; expect "OK", 205 tests after H4)
 python3 -m unittest discover -s tests -t .
 
 # synthetic experiment (paper numbers; must reproduce docs/quant.md exactly)
@@ -77,12 +93,14 @@ Approved (within existing human approvals):
 - Local edits, tests, simulations, paper builds, demo runs; sanitized pushes to feature branches;
   opening/updating PRs with green CI.
 - Read-only access to the public Coinbase feed for bounded captures (600 s / 250 MiB) and offline replay.
-- Tiger Data, approved target and `quotegate` schema only: read-only queries, unchanged re-import of
-  the 3 Phase 1 runs, sanitized analytics reports.
-- Small Hermes tasks under the procedure in `AGENTS.md` (one at a time, allowed files, mutation check).
+- Historical Tiger Data approvals covered the original target and Phase 1 runs only. This
+  consolidation authorizes no database writes and performs no database access.
+- Consolidation only: no feature expansion or new Hermes tasks. Future delegated tasks require
+  the procedure in `AGENTS.md` and an isolated workspace.
 
 Blocked (needs explicit human approval):
-- Merging PR #4 (requested to remain for human merge) and merging the handoff PR.
+- Merging any PR outside the explicitly authorized #4, #5, #6 and documentation-only cleanup.
+  Earlier human-merge holds on #4/#5 were superseded by the consolidation authorization.
 - Importing real-data captures (or any new dataset) into Tiger Data; any schema expansion,
   destructive SQL, privilege change, or new cloud resource.
 - New remote deployments, SSH/firewall/Tailscale changes, changes to Hermes or model services.
