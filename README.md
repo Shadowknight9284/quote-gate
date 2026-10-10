@@ -45,6 +45,10 @@ python3 -m quote_gate.coinbase_capture --out artifacts/realdata/run1 --seconds 6
 python3 -m quote_gate.coinbase_replay --capture artifacts/realdata/run1
 ```
 
+## For coding agents
+Start with [AGENTS.md](AGENTS.md) (rules, commands, code map, invariants) and
+[docs/handoff.md](docs/handoff.md) (in-flight and ready tasks with contracts).
+
 ## Documentation
 - [docs/architecture.md](docs/architecture.md) — runtime vs experiment vs analytics vs dev workflow; flows; limits
 - [docs/state.md](docs/state.md) — feature status by verification level; claim → evidence table
@@ -54,6 +58,7 @@ python3 -m quote_gate.coinbase_replay --capture artifacts/realdata/run1
 - [docs/benchmarks.md](docs/benchmarks.md) — measured latencies and exact field definitions
 - [docs/tiger-data.md](docs/tiger-data.md) — optional analytics: offline vs credentialed setup
 - [docs/analytics-example.md](docs/analytics-example.md) — sanitized Phase 1 import and query results
+- [docs/submission.md](docs/submission.md) — submission draft and system-design summary (not submitted)
 - [docs/security.md](docs/security.md), [docs/test-plan.md](docs/test-plan.md),
   [docs/delegation-log.md](docs/delegation-log.md), [docs/contracts/](docs/contracts/)
 
