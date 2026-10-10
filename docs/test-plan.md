@@ -14,6 +14,9 @@ Run: `python3 -m unittest discover -s tests -t .` (repo root).
 | Importer | tests/test_importer.py | none | plan counts, untimed v1, stable keys, explicit failure, env parsing |
 | Reconnect/ping | tests/test_reconnect_ping.py | real, loopback | rapid reconnects, task leaks, ping timeout, mismatched pong |
 
-All test files are collected by the standard command (78+4 tests at last count).
+| Quant | tests/test_quant.py, tests/test_ledger_hermes.py | injected steps | signal/policy/ledger/execution/backtest timing |
+| Live order path | tests/test_live_local.py | real, loopback | contract O1: idempotency, store bounds, UNKNOWN, reconciliation, restart |
+
+All 13 test files are collected by the standard command: 134 tests at `4b0ec45`.
 Timing magnitudes are never asserted in tests; they belong in docs/benchmarks.md.
 Planned: fault scenarios (dup/old on wire, sequence reset, slow report consumer, overload), cross-host.
