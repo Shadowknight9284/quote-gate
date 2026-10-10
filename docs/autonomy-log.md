@@ -45,3 +45,9 @@ Entries are agent-recorded under the standing autonomy contract; nothing here is
 - origin/main unchanged at `396f2d8` (no teammate changes to preserve).
 - `docs/state.md` current-head line was stale (152 tests, "no CI"); corrected in the next commit,
   which must pass CI again before merge.
+
+## 2026-10-10T18:20Z — submission materials (branch `docs/submission`)
+- `docs/submission.md`: draft text + system-design summary (not submitted anywhere).
+- Local only (gitignored): `artifacts/submission/` with QuoteGate-paper.pdf (2 pages), page PNGs,
+  demo transcript.
+- PR #2 (Coinbase real-data) open with CI green; not merged (merge authority covered PR #1 only).

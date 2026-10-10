@@ -46,6 +46,7 @@ Paper: `cd paper && latexmk -pdf quotegate.tex` (needs a TeX Live install with p
 - [docs/benchmarks.md](docs/benchmarks.md) — measured latencies and exact field definitions
 - [docs/tiger-data.md](docs/tiger-data.md) — optional analytics: offline vs credentialed setup
 - [docs/analytics-example.md](docs/analytics-example.md) — sanitized Phase 1 import and query results
+- [docs/submission.md](docs/submission.md) — submission draft and system-design summary (not submitted)
 - [docs/security.md](docs/security.md), [docs/test-plan.md](docs/test-plan.md),
   [docs/delegation-log.md](docs/delegation-log.md), [docs/contracts/](docs/contracts/)
 
