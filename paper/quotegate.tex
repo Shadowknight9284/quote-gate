@@ -124,6 +124,16 @@ acknowledgements in flight): the strategy-known ledger then differs from the aut
 11 seeds (total net difference 20 ticks), and results use the authoritative ledger. 21 of 30 seeds end
 with open inventory, valued hypothetically as above.
 
+\section{Systems result (separate population)}
+The same policy, order protocol and ledger also ran over the networked transport (one seed, 10\,s
+admission window): venue on a second VM on the same LAN, aggregator and strategy on the first.
+In a normal run all 3012 orders filled and were acknowledged; with every 50th acknowledgement
+dropped, 21 orders became unknown, trading paused, and all 21 were recovered by status query
+($\approx$302\,ms), never resent. The ledger matched the venue's fill log exactly; position never
+exceeded 5. Order-to-acknowledgement round trip (application level, one host's clock) was
+649\,$\mu$s median versus 132\,$\mu$s with both processes on one VM. These figures are not part of
+the table above.
+
 \section{Limitations}
 Results hold only for this synthetic model, these frozen parameters and these 30 seeds; they are not
 a general impossibility result and not evidence of real-market alpha. Fills ignore queues, impact and

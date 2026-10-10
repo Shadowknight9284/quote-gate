@@ -20,7 +20,11 @@ Prints decisions by reason, orders sent/filled/rejected, timeouts/UNKNOWN/reconc
 position and cash, execution RTT (order written → exec read), ledger-vs-venue reconciliation, and
 a decision comparison with the deterministic backtest for the same market seed.
 
-## 3. Deterministic quant experiment (paper numbers)
+## 3. Optional analytics
+Results of the Phase 1 Tiger Data import and query validation, readable without credentials:
+[analytics-example.md](analytics-example.md). Offline importer checks: [tiger-data.md](tiger-data.md).
+
+## 4. Deterministic quant experiment (paper numbers)
 ```
 python3 -m quote_gate.experiments --out /tmp/qg
 ```

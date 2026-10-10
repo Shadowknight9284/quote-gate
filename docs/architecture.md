@@ -51,13 +51,14 @@ Limitations (by design for this prototype):
   routing and trading stop; restart loses positions, pending orders and counters (nothing persisted).
 - **In-memory venue store**: a venue restart loses order records; deduplication is not restart-safe.
 - Placement verified so far: everything on one VM (loopback); M3 ran one venue on a second VM on the
-  same LAN for the market-data path only. Both VMs may share a physical host. The order path has
-  **not** been run across VMs.
+  same LAN for the market-data path; C3 ran the order path with the venue on the second VM (one run
+  per scenario). Both VMs may share a physical host.
 
 ## C. Optional post-run analytics (Tiger Data)
 Local artifacts → `quote_gate.importer` (separate process, after runs) → Tiger Data → SQL → report.
 Never on the runtime path, never routing state, never a recovery mechanism. See
-[tiger-data.md](tiger-data.md). Not yet connected.
+[tiger-data.md](tiger-data.md). Phase 1 (three runs) imported into a dedicated `quotegate`
+schema and query-validated; see [analytics-example.md](analytics-example.md).
 
 ## D. Development workflow (not runtime)
 Claude Code designs, integrates and verifies. Hermes (a local-model coding agent on another VM)

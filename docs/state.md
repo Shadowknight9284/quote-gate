@@ -22,7 +22,8 @@ a person independently re-ran it; nothing has reached that level yet.
 | Tiger Data importer (plan / verify-local) | tested locally without a database | `importer.py`, `normalize.py` |
 | Tiger Data write safeguards (conflict detection, pre-existing schema validation) | tested locally without a database | `importer.py`, `tests/test_importer_safeguards.py` |
 | Tiger Data read-only check | run once against the configured target: read-only session verified; TimescaleDB 2.30.2; schema `quotegate` absent; CREATE privilege present | `importer.py` |
-| Tiger Data schema init / import | implemented, never run (awaiting approval) | `importer.py`, `db/` |
+| Tiger Data schema init + Phase 1 import (3 runs), re-import, conflict probe | tested against the real service once (`b15602e`) | `docs/analytics-example.md` |
+| Tiger Data query validation (DB percentiles vs local) | tested once: 0 ns exact diff on 28 route stats + per-sample feed RTT | `docs/analytics-example.md` |
 | Order path with venue as a separate process (loopback) | tested locally | `cli venue --market-seed`, `live --venue` |
 | Two-page paper | implemented (compiles, 2 pages) | `paper/quotegate.tex` |
 
@@ -44,10 +45,12 @@ commands shown; M3 artifacts exist only on the developer machine.
 | Dropped ack / disconnect after exec / venue restart behave per contract O1 | `4b0ec45` | `python3 -m unittest tests.test_live_local` | tested locally | loopback; fault hooks are injected |
 | Separate-process loopback: normal 3012/3012 filled, exec RTT p50 ≈ 130 µs; drop-ack-every-50: 21 timeouts → 21 resolved by status, ≈301 ms to reconciled outcome; ledger == venue fill log in both | pre-C3 rehearsal | `cli venue --market-seed 101 ...` + `live --venue 127.0.0.1:19105` | tested locally | same VM; not comparable to the single-process 53 µs figure (process boundary added) |
 | C3 cross-VM order path: 3012/3012 filled (normal), 21/21 dropped acks recovered by status (≈302 ms), ledger == venue fill log, no duplicate executions, max abs position 5; exec RTT p50 649 µs remote vs 132 µs separate-process local | `982cc03`, task c3-20261010T171636Z | `scripts/remote_venue.sh` + `quote_gate.live --venue` + `--reconcile` | tested across VMs | one seed, one run each; same LAN, possibly same physical host; application RTT |
+| Phase 1 import: 3 runs, 60 574 timed, 120 000 untimed, 48 events, 252 summaries; re-import inserts 0; conflict probe aborts with content unchanged | `b15602e` | `quote_gate.importer init-schema/apply/probe`; artifacts/tiger (local) | tested against real service once | one service, one import; Phase 2 and C3 not imported |
+| DB nearest-rank percentiles equal local recomputation (0 ns, 28 route stats; feed RTT per-sample) | `b15602e` | `db/queries.sql` via read-only session | tested once | same populations only; remote feed RTT summary-only |
 | Dedup lifetime: until released **and** evicted; evicted ID re-executes | current | `tests/test_live_local.py` | tested locally | in-memory; not restart-safe |
 
 ## Known gaps
 - Coordinator restart loses all strategy/ledger/pending-order state (in memory).
 - Venue order store is in memory; dedup is not restart-safe.
-- Tiger Data: safeguards implemented but never exercised against a real database.
+- Tiger Data: Phase 2 and C3 artifacts not imported; no CI runs database tests (by design).
 - Pinger behaviour under socket write errors unverified.

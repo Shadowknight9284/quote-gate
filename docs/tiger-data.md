@@ -1,6 +1,7 @@
 # Tiger Data (optional post-run analytics)
 
-Status: **built and tested without a database; never connected.** A target has been configured
+Status: **Phase 1 imported and query-validated (2026-10-10, revision `b15602e`)** — see
+[analytics-example.md](analytics-example.md). Earlier status: a target has been configured
 privately (identifier kept out of Git). One approved read-only check has run (2026-10-10):
 session verified read-only; PostgreSQL 18.6; TimescaleDB 2.30.2 with `create_hypertable`;
 schema `quotegate` absent (no pre-existing objects); CREATE privilege present. No DDL or writes yet. No import has been verified

@@ -17,6 +17,8 @@ Run: `python3 -m unittest discover -s tests -t .` (repo root).
 | Quant | tests/test_quant.py, tests/test_ledger_hermes.py | injected steps | signal/policy/ledger/execution/backtest timing |
 | Live order path | tests/test_live_local.py | real, loopback | contract O1: idempotency, store bounds, UNKNOWN, reconciliation, restart |
 
-All 13 test files are collected by the standard command: 134 tests at `4b0ec45`.
+| Importer safeguards | tests/test_importer_safeguards.py, tests/test_importer_db_fake.py | none | conflict detection, schema validation, pre/inserted/final counts, rollback, probe, target guard |
+
+All 15 test files are collected by the standard command (see `docs/state.md` for the count at the current head).
 Timing magnitudes are never asserted in tests; they belong in docs/benchmarks.md.
 Planned: fault scenarios (dup/old on wire, sequence reset, slow report consumer, overload), cross-host.

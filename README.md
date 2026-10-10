@@ -23,7 +23,8 @@ cd quote-gate && git switch publish/m1-m4
 | Quant: imbalance signal, target-position policy, FIFO ledger, deterministic backtest, fixed 5-cell matrix | tested locally; results in the paper |
 | Networked order path (order/exec/status on the feed connection, UNKNOWN + reconciliation) | tested locally (loopback only) |
 | Two-page paper | [paper/quotegate.tex](paper/quotegate.tex) (results from the deterministic backtest) |
-| Tiger Data post-run analytics | optional; built and tested **without** a database; never connected |
+| Networked order path across VMs (C3: normal + dropped-ack) | tested across VMs (one run each) |
+| Tiger Data post-run analytics | optional; Phase 1 (3 runs) imported and query-validated — see [docs/analytics-example.md](docs/analytics-example.md) |
 | Human verification | none yet — results are agent-reported |
 
 ## Quick start (Python 3.12, standard library only)
@@ -44,6 +45,7 @@ Paper: `cd paper && latexmk -pdf quotegate.tex` (needs a TeX Live install with p
 - [docs/task-board.md](docs/task-board.md) — tasks, file ownership, Hermes tasks
 - [docs/benchmarks.md](docs/benchmarks.md) — measured latencies and exact field definitions
 - [docs/tiger-data.md](docs/tiger-data.md) — optional analytics: offline vs credentialed setup
+- [docs/analytics-example.md](docs/analytics-example.md) — sanitized Phase 1 import and query results
 - [docs/security.md](docs/security.md), [docs/test-plan.md](docs/test-plan.md),
   [docs/delegation-log.md](docs/delegation-log.md), [docs/contracts/](docs/contracts/)
 
