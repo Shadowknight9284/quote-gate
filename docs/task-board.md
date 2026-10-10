@@ -33,6 +33,6 @@ To avoid overlapping editors: claim a file in this table (via a commit) before c
 | T3 | Artifact normalizer | rejected after 2 repairs | none (Claude wrote `normalize.py`) |
 | A1 | Audit of validation/freshness/reconnect/ping | no confirmed defects; patch rejected | none |
 | H1 | Ledger regression tests | partially accepted (13 kept, 1 rejected, 2 out-of-scope files discarded) | `tests/test_ledger_hermes.py` |
-| H2 | Order idempotency regression tests | in review | — |
+| H2 | Order idempotency regression tests | rejected (7/8 tests asserted non-contract frames); no defects confirmed | none |
 
 Details: [delegation-log.md](delegation-log.md).

@@ -53,3 +53,12 @@ This is not a clean bill of health and not a security audit result.
 - Note: writing files outside the allowed path shows the task workspace does not enforce access
   isolation; the test patch itself does not establish isolation. Independent review and mutation
   checks remain required.
+
+## H2 order idempotency regression tests (Hermes) — rejected, 0 repairs; no confirmed defects
+- Contract O1 (`docs/protocol.md`); allowed file `tests/test_orders_hermes.py` (respected this time).
+  Baseline `f6a5d4e`; budget 240 s, 25 turns.
+- 8 tests; 7 failed. Report called them "potential defects". Claude reproduced each: all 7 assert
+  non-contract behaviour (frame `type` "rejected"/"executed" instead of `type:"exec"` + `status`;
+  `orders_executed` treated as units instead of an order count). No defect reproduced; the same
+  behaviours are covered with contract-correct assertions in `tests/test_live_local.py` (passing).
+- The 1 passing test duplicates existing coverage. Patch not applied; no repair spent.
