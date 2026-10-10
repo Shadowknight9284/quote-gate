@@ -1,0 +1,28 @@
+QuoteGate demo  2026-10-10T21:06:32Z  revision e9a71db
+
+=== 1. Tests (standard library only) ===
+Ran 205 tests in 4.241s
+
+OK
+
+=== 2. Market-data path: two venues + aggregator on loopback ===
+-- route lookup (both venues fresh):
+{"type":"route_result","id":null,"venue_id":"B","price_ticks":9958,"quote_sequence":1000,"connection_epoch":1,"quote_age_ns":187816,"excluded":[]}
+-- venue A frozen (SIGSTOP) for 300 ms; route lookup:
+{"type":"route_result","id":null,"venue_id":"B","price_ticks":9971,"quote_sequence":1343,"connection_epoch":1,"quote_age_ns":238222,"excluded":[["A","stale"]]}
+-- A resumed, B killed; per-venue status:
+{'A': 'fresh', 'B': 'disconnected'}
+
+=== 3. Networked order path on loopback (seed 101, 2000 steps) ===
+{'sent': 1217, 'filled': 1217, 'rejected': {}, 'timeouts': 0, 'unresolved': [], 'position': -5, 'max_abs_position': 5}
+exec RTT (ns): {'count': 1217, 'p50': 53030, 'p99': 144003}
+ledger vs venue: {'venue_fills': 1217, 'ledger_fills': 1217, 'unbooked_venue_fills': 0, 'unbooked_all_unresolved': True, 'ledger_not_at_venue': 0, 'venue_fill_log_dropped': 0, 'mismatched': 0}
+
+=== 4. Deterministic quant experiment (paper numbers) ===
+1_no_trade           fills     0.0  pre-fee       0.0  post-fee       0.0  hit 0.5023
+2_null               fills  3317.3  pre-fee   -8973.8  post-fee  -25563.2  hit 0.5023
+3_controlled         fills  3317.3  pre-fee   -7381.8  post-fee  -23971.2  hit 0.6326
+4_controlled_delay   fills   692.5  pre-fee   -1845.8  post-fee   -5311.2  hit 0.6326
+5_controlled_fault   fills  2008.7  pre-fee   -4430.2  post-fee  -14475.8  hit 0.6326
+
+Done. Transcript: artifacts/demo/transcript.txt
