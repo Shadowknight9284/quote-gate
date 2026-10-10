@@ -40,3 +40,13 @@ This is not a clean bill of health and not a security audit result.
 - Repair 2: 1/11 acceptance failure remained (whole-number µs values not converted); report
   attributed it to "test expectations", but the test asserts the contract formula.
 - Outcome: patch not applied. Claude wrote `quote_gate/normalize.py`; 11/11 acceptance tests pass.
+
+## H1 ledger regression tests (Hermes) — partially accepted (13 of 14), 0 repairs
+- Contract: Accounting section of `docs/contracts/Q1-quant.md`; allowed file `tests/test_ledger_hermes.py`.
+  Baseline `1267762`; budget 240 s, 25 turns.
+- Scope violation: also created `debug_ledger.py`, `debug_specific.py` (not applied).
+- 1 test failed: expected `Fill(...)` construction to raise; contract validates in `Ledger.apply`
+  (covered by `tests/test_quant.py`). Test asserts non-contract behaviour → dropped. Report did not
+  mention the failure.
+- Remaining 13 tests killed 5/5 injected ledger mutants (fee sign, duplicate check, short realized
+  sign, FIFO→LIFO, limit off-by-one). Accepted with a provenance docstring.

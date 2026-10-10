@@ -14,5 +14,8 @@ M5 execution only if M4 benchmarks exist by Sun 06:00. Freeze code Sun 09:30.
 | M3 | Venue B on second VM, RTT-only cross-host timing | Claude | done: 12/12 remote checks, matched bench, cleaned up |
 | M4 | Fault + overload scenarios, report | Claude | done locally (loopback); remote per-sample feed RTT not rerun |
 | T3 | Artifact normalizer | Hermes→Claude | done locally (Hermes patch rejected after 2 repairs) |
-| E1 | Tiger Data evidence store: schema, queries, importer | Claude | built + DB-free tested; DB connection pending approval |
+| Q1 | Quant slice: signal, policy, ledger, market, execution, matrix | Claude | done, tested; first matrix run (negative result) |
+| H1 | Ledger regression tests | Hermes | 13/14 accepted after mutation check |
+| P1 | Two-page paper | Claude | skeleton compiles; results TODO |
+| E1 | Tiger Data evidence store: schema, queries, importer | Claude | built + DB-free tested; paused: tiger.env empty |
 | M5 | Simulated execution (UNKNOWN on timeout, idempotent IDs) | — | optional |
