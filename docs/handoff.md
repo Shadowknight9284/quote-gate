@@ -6,7 +6,8 @@ All results are agent-verified only; nothing is human verified.
 
 ## Current repository checkpoint (2026-10-10)
 `main` is the integrated starting point; implementation baseline `50b33b7` (PR #6 merge).
-The documentation-only consolidation PR updates this checkpoint without changing core code.
+Documentation-only consolidation [PR #7](https://github.com/Shadowknight9284/quote-gate/pull/7)
+updates this checkpoint without changing core code; its linked page records disposition and CI.
 All results are agent-run, not human-verified.
 
 | PR | Disposition | Merge commit | Merge CI |
