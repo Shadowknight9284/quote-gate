@@ -4,6 +4,7 @@ Runs as a separate process after experiments; never imported by the runtime path
 
   python3 -m quote_gate.importer plan [--root artifacts]          # DB-free: row counts per table
   python3 -m quote_gate.importer verify-local [--root artifacts]  # DB-free: recompute summaries
+  .venv/bin/python -m quote_gate.importer init-schema --confirm   # additive DDL from db/schema.sql
   .venv/bin/python -m quote_gate.importer apply --confirm         # reads docs/private/tiger.env
 
 Placement is not recorded in artifacts; it comes from db/placements.json (label -> placement),
@@ -292,10 +293,24 @@ def apply_plan(conn, plan):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="quote_gate.importer")
-    p.add_argument("cmd", choices=["plan", "verify-local", "apply"])
+    p.add_argument("cmd", choices=["plan", "verify-local", "init-schema", "apply"])
     p.add_argument("--root", default="artifacts")
     p.add_argument("--confirm", action="store_true", help="required for apply")
     a = p.parse_args(argv)
+    if a.cmd == "init-schema":
+        if not a.confirm:
+            sys.exit("init-schema requires --confirm")
+        params = load_tiger_env()
+        print(json.dumps({"target": target_identifier(params)}))
+        import psycopg      # optional dependency
+        with open("db/schema.sql") as f:
+            ddl = f.read()
+        with psycopg.connect(**params, connect_timeout=10, autocommit=False,
+                             options="-c statement_timeout=60000") as conn:
+            with conn.transaction():
+                conn.execute(ddl)
+        print(json.dumps({"schema": "quotegate", "status": "ensured"}))
+        return
     placements = load_placements()
     plans, failures = [], []
     for d in discover(a.root):
