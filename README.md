@@ -30,7 +30,7 @@ cd quote-gate && git switch main
 ## Quick start (Python 3.12, standard library only)
 Run from the repository root. No virtualenv, database, or private configuration is needed.
 ```
-python3 -m unittest discover -s tests -t .          # 205 tests; expect "OK"
+python3 -m unittest discover -s tests -t .          # 209 tests; expect "OK"
 python3 -m quote_gate.experiments --out /tmp/qg     # fixed quant matrix, 30 seeds (~6 s)
 python3 -m quote_gate.live --steps 2000             # networked loopback slice (~5 s), JSON report
 ```
@@ -38,6 +38,15 @@ The [demo](docs/demo.md) runs tests, market-data fault handling, loopback orders
 quant matrix with `scripts/demo.sh [OUT_FILE]`. `scripts/demo.sh --quick [OUT_FILE]` runs the
 same first three sections and skips the matrix; quick mode is not full quant verification.
 Paper: `cd paper && latexmk -pdf quotegate.tex` (needs a TeX Live install with pgfplots).
+
+## Operations console (browser, optional)
+A local web console over the same code: live venue health and freshness, route previews, the
+strategy and position, fault injection (stale feed, dropped ack, disconnect, venue restart), order
+lifecycle and venue-vs-ledger reconciliation, the experiment matrix, and evidence checks.
+Standard library only; binds 127.0.0.1. See [docs/console.md](docs/console.md).
+```
+python3 -m quote_gate.console        # then open http://127.0.0.1:8050
+```
 
 ## Optional: real market data (Coinbase BTC-USD, read-only)
 Not needed for the quick start. Public `level2_batch` feed, no account or key; execution is

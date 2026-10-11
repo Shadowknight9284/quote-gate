@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuoteGate Console</title>
+<meta name="description" content="Local operations console for the QuoteGate simulated trading workflow.">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="3" y="4" width="5" height="24" rx="1.5"/><rect x="24" y="4" width="5" height="24" rx="1.5"/>
+      <path d="M8 10h16M8 16h16M8 22h16" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="brand-name">QuoteGate</div>
+      <div class="brand-sub">Operations console</div>
+    </div>
+  </div>
+
+  <div class="top-status">
+    <span class="chip chip-sim" title="Everything is simulated: no exchange account, no funds, no real orders.">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 6v3.5M8 11.5v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Simulated · no real orders
+    </span>
+    <span id="trading-badge" class="badge" data-tone="neutral" role="status" aria-live="polite">
+      <span class="dot"></span><span class="label">Idle</span>
+    </span>
+    <span id="run-clock" class="mono run-clock" aria-label="Run time">--</span>
+  </div>
+
+  <form id="run-form" class="run-controls" autocomplete="off">
+    <label class="field">
+      <span>Seed</span>
+      <input id="seed" type="number" min="1" max="1000000" value="101" inputmode="numeric" required>
+    </label>
+    <label class="field">
+      <span>Duration</span>
+      <select id="seconds">
+        <option value="15">15 s</option>
+        <option value="30" selected>30 s</option>
+        <option value="60">60 s</option>
+        <option value="120">120 s</option>
+      </select>
+    </label>
+    <button id="run-btn" class="btn btn-primary" type="submit">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+      <span>Start run</span>
+    </button>
+  </form>
+</header>
+
+<nav class="rail" aria-label="Sections">
+  <button class="rail-item" data-tab="live" aria-current="page">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Live</span>
+  </button>
+  <button class="rail-item" data-tab="orders">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Orders</span>
+  </button>
+  <button class="rail-item" data-tab="quant">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/></svg><span>Quant</span>
+  </button>
+  <button class="rail-item" data-tab="evidence">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>Evidence</span>
+  </button>
+</nav>
+
+<main id="main" tabindex="-1">
+
+<!-- ================= LIVE ================= -->
+<section id="tab-live" class="tab" aria-labelledby="h-live">
+  <h1 id="h-live" class="sr-only">Live run</h1>
+
+  <div id="live-empty" class="empty card">
+    <svg class="empty-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="3" y="4" width="5" height="24" rx="1.5"/><rect x="24" y="4" width="5" height="24" rx="1.5"/>
+      <path d="M8 10h16M8 16h16M8 22h16" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <h2>No run yet</h2>
+    <p>Start a run to launch two simulated venues and the aggregator on loopback.
+      Venue A is the strategy's reference and its execution venue; venue B streams market data only.
+      Quotes older than 50&nbsp;ms are stale and never traded on.</p>
+    <button class="btn btn-primary" data-action="start">Start run</button>
+  </div>
+
+  <div id="live-body" hidden>
+    <div class="kpis">
+      <article class="card kpi"><h2 class="label">Orders sent</h2><div class="kpi-val mono" data-k="sent">0</div><svg class="spark" data-spark="sent" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"></svg></article>
+      <article class="card kpi"><h2 class="label">Filled</h2><div class="kpi-val mono" data-k="filled">0</div><svg class="spark" data-spark="filled" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"></svg></article>
+      <article class="card kpi"><h2 class="label">Rejected by venue</h2><div class="kpi-val mono" data-k="rejected">0</div><div class="kpi-note" data-k="rejected-why">—</div></article>
+      <article class="card kpi"><h2 class="label">Unknown / lost orders</h2><div class="kpi-val mono" data-k="unresolved">0</div><div class="kpi-note" data-k="unresolved-why">none</div></article>
+    </div>
+
+    <div class="grid-live">
+      <article class="card span-venues">
+        <header class="card-h">
+          <h2>Venue health</h2>
+          <span class="hint">Stale after <b class="mono">50 ms</b> without an accepted quote</span>
+        </header>
+        <div class="venues">
+          <div class="venue" data-venue="A"></div>
+          <div class="venue" data-venue="B"></div>
+        </div>
+        <div class="timeline">
+          <div class="timeline-h"><span class="label">Feed status, last 30 s</span>
+            <span class="legend">
+              <i data-tone="good"></i>Fresh <i data-tone="warn"></i>Stale <i data-tone="bad"></i>Disconnected / invalid <i data-tone="neutral"></i>No quote
+            </span>
+          </div>
+          <div id="timeline" class="tl" role="img" aria-label="Feed status over the last 30 seconds"></div>
+          <div class="timeline-axis mono"><span>−30 s</span><span>−20 s</span><span>−10 s</span><span>now</span></div>
+        </div>
+      </article>
+
+      <article class="card span-strategy">
+        <header class="card-h"><h2>Strategy &amp; position</h2><span class="hint">Reference: venue A</span></header>
+        <div class="signal">
+          <div class="signal-top">
+            <div><span class="label">Imbalance signal</span><div class="mono big" id="sig-val">—</div></div>
+            <div class="right"><span class="label">Target</span><div class="mono big" id="sig-target">—</div></div>
+          </div>
+          <div class="zones" aria-hidden="true">
+            <div class="zone z-short">short −5</div><div class="zone z-flat">flat</div><div class="zone z-long">long +5</div>
+            <div id="sig-marker" class="zone-marker"></div>
+          </div>
+          <div class="zone-axis mono"><span>−1</span><span>−0.20</span><span>0</span><span>+0.20</span><span>+1</span></div>
+          <p class="fine">I = (bid size − ask size) / (bid size + ask size). No signal while venue A is not fresh.</p>
+        </div>
+        <div class="position">
+          <div class="label">Position (limit ±5)</div>
+          <div class="gauge" aria-hidden="true">
+            <div class="gauge-track"></div>
+            <div class="gauge-ticks"></div>
+            <div id="pos-marker" class="gauge-marker"></div>
+          </div>
+          <div class="gauge-axis mono"><span>−5</span><span>0</span><span>+5</span></div>
+          <dl class="stats3">
+            <div><dt>Position</dt><dd class="mono" id="led-pos">0</dd></div>
+            <div><dt>Max |position|</dt><dd class="mono" id="led-max">0</dd></div>
+            <div><dt>Fees paid</dt><dd class="mono" id="led-fees">0</dd></div>
+          </dl>
+        </div>
+        <div class="decisions">
+          <div class="label">Decisions</div>
+          <div id="decisions" class="bars"></div>
+        </div>
+      </article>
+
+      <article class="card span-route">
+        <header class="card-h"><h2>Route preview</h2><span class="hint">Router run now for 1 unit, all venues</span></header>
+        <div id="route" class="route"></div>
+      </article>
+
+      <article class="card span-faults">
+        <header class="card-h"><h2>Order faults</h2><span class="hint">Injected at venue A</span></header>
+        <ul class="faults">
+          <li>
+            <div><b>Drop next ack</b><p>The venue records the order but never sends its report. Expect UNKNOWN → halt → status query → resolved.</p></div>
+            <button class="btn" data-fault="drop_next_ack">Inject</button>
+          </li>
+          <li>
+            <div><b>Disconnect after next order</b><p>The connection drops right after the venue records an order. Expect reconnect, then resolution via status.</p></div>
+            <button class="btn" data-fault="disconnect_after_exec">Inject</button>
+          </li>
+          <li>
+            <div><b>Restart venue mid-order</b><p>Drop an ack, then restart the venue so it forgets its orders. The order cannot be resolved: trading stays halted.</p></div>
+            <button class="btn btn-danger" data-fault="restart_mid_order">Inject</button>
+          </li>
+        </ul>
+        <dl class="stats3 fault-counters">
+          <div><dt>Ack timeouts</dt><dd class="mono" data-k="timeouts">0</dd></div>
+          <div><dt>Resolved via status</dt><dd class="mono" data-k="by-status">0</dd></div>
+          <div><dt>Lost records</dt><dd class="mono" data-k="lost">0</dd></div>
+        </dl>
+      </article>
+
+      <article class="card span-events">
+        <header class="card-h">
+          <h2>Event stream</h2>
+          <div class="filters" role="group" aria-label="Filter events">
+            <button class="chip-btn" data-filter="all" aria-pressed="true">All</button>
+            <button class="chip-btn" data-filter="feed" aria-pressed="false">Feed</button>
+            <button class="chip-btn" data-filter="orders" aria-pressed="false">Orders</button>
+            <button class="chip-btn" data-filter="fault" aria-pressed="false">Faults</button>
+          </div>
+        </header>
+        <ol id="events" class="events mono" aria-live="off"></ol>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ORDERS ================= -->
+<section id="tab-orders" class="tab" aria-labelledby="h-orders" hidden>
+  <h1 id="h-orders" class="sr-only">Orders and reconciliation</h1>
+  <div id="orders-empty" class="empty card">
+    <h2>No run yet</h2><p>Orders, reconciliation and round-trip times appear here once a run starts.</p>
+    <button class="btn btn-primary" data-action="start">Start run</button>
+  </div>
+
+  <div id="orders-body" hidden>
+    <div class="grid-orders">
+      <article class="card span-life">
+        <header class="card-h"><h2>Order lifecycle</h2><span class="hint">UNKNOWN orders are queried, never resent</span></header>
+        <svg id="lifecycle" viewBox="0 0 640 220" role="img" aria-label="Order lifecycle state counts"></svg>
+      </article>
+
+      <article class="card span-recon">
+        <header class="card-h"><h2>Venue vs ledger</h2><span id="recon-badge" class="badge" data-tone="neutral"><span class="dot"></span><span class="label">—</span></span></header>
+        <div class="recon-pair">
+          <div><span class="label">Venue A fill log</span><div class="mono huge" id="recon-venue">0</div></div>
+          <div class="recon-eq" aria-hidden="true">=</div>
+          <div><span class="label">Strategy ledger</span><div class="mono huge" id="recon-ledger">0</div></div>
+        </div>
+        <dl class="checks" id="recon-checks"></dl>
+        <p id="recon-note" class="callout" hidden></p>
+      </article>
+
+      <article class="card span-rtt">
+        <header class="card-h"><h2>Order → execution round trip</h2><span class="hint">This run, venue A</span></header>
+        <dl class="stats4" id="rtt-stats"></dl>
+        <svg id="rtt-hist" viewBox="0 0 640 180" role="img" aria-label="Round-trip time histogram"></svg>
+        <p class="fine">Timer starts before the order frame is written and stops after the execution report is read and booked.
+          Measured in one process over loopback while this console polls the same event loop, so it reads higher than
+          the published runs (see Evidence). Use <code>python3 -m quote_gate.live</code> for benchmark numbers.</p>
+      </article>
+
+      <article class="card span-ledger">
+        <header class="card-h"><h2>Ledger</h2><span class="hint">Integer ticks</span></header>
+        <dl class="stats2" id="ledger-stats"></dl>
+        <div class="label sub">Feed ping/pong RTT (p50)</div>
+        <dl class="stats2" id="feed-rtt"></dl>
+      </article>
+
+      <article class="card span-table">
+        <header class="card-h"><h2>Recent orders</h2><span class="hint">Last 40 resolved, newest first</span></header>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th scope="col">Client order ID</th><th scope="col">Side</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Limit</th><th scope="col">Outcome</th><th scope="col" class="num">Fill price</th><th scope="col" class="num">Fee</th><th scope="col">Resolved via</th></tr></thead>
+            <tbody id="orders-rows"></tbody>
+          </table>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= QUANT ================= -->
+<section id="tab-quant" class="tab" aria-labelledby="h-quant" hidden>
+  <h1 id="h-quant" class="sr-only">Quant lab</h1>
+  <div class="grid-quant">
+    <article class="card span-explain">
+      <header class="card-h"><h2>Strategy</h2><span class="hint">Frozen before evaluation</span></header>
+      <div class="formula mono">I = (Q<sup>bid</sup> − Q<sup>ask</sup>) / (Q<sup>bid</sup> + Q<sup>ask</sup>)</div>
+      <ul class="rules mono">
+        <li><span>I &gt; +0.20</span><span>target +5</span></li>
+        <li><span>|I| ≤ 0.20</span><span>target 0</span></li>
+        <li><span>I &lt; −0.20</span><span>target −5</span></li>
+      </ul>
+      <p class="fine">Order = target − booked position, at most 5 units, immediate-or-cancel at the observed price.
+        One order in flight at a time. Any UNKNOWN outcome halts trading.</p>
+    </article>
+
+    <article class="card span-takeaway">
+      <header class="card-h"><h2>Result</h2></header>
+      <p class="takeaway">A detectable signal is not a profitable one.</p>
+      <p class="fine">The planted signal raises the hit rate from .502 to .633 and beats the null regime on every seed,
+        yet every trading cell loses after spread and fees: the edge is about 0.13 ticks per unit per step held,
+        while a round trip costs about 3 ticks (1-tick spread + 2 × 1-tick fee). Source: <code>docs/quant.md</code>.</p>
+      <div class="repro">
+        <button class="btn" id="repro-btn">Re-run matrix &amp; compare</button>
+        <span id="repro-out" class="fine" role="status" aria-live="polite">Regenerates all 150 runs (~10 s) and compares with the published source, excluding run ID.</span>
+      </div>
+    </article>
+
+    <article class="card span-matrix">
+      <header class="card-h"><h2>Experiment matrix</h2><span class="hint" id="matrix-src">—</span></header>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col">Cell</th><th scope="col">Setup</th><th scope="col" class="num">Fills</th><th scope="col" class="num">Pre-fee P&amp;L</th><th scope="col" class="num">Post-fee P&amp;L</th><th scope="col" class="num">Hit rate</th><th scope="col" class="num">Open inventory</th></tr></thead>
+          <tbody id="matrix-rows"></tbody>
+        </table>
+      </div>
+      <p class="fine">Means ± sample s.d. over 30 seeds, ticks. Economics use the venue-authoritative ledger; open inventory is valued
+        hypothetically at the last fresh executable price (no closing trade).</p>
+    </article>
+
+    <article class="card span-paired">
+      <header class="card-h"><h2>Controlled − null, pre-fee P&amp;L</h2><span class="hint" id="paired-sum">—</span></header>
+      <svg id="paired" viewBox="0 0 640 220" role="img" aria-label="Paired difference per seed"></svg>
+    </article>
+
+    <article class="card span-replay">
+      <header class="card-h"><h2>Coinbase BTC-USD replay</h2><span class="chip chip-sim">Real observations · hypothetical execution</span></header>
+      <div id="replay"></div>
+    </article>
+  </div>
+</section>
+
+<!-- ================= EVIDENCE ================= -->
+<section id="tab-evidence" class="tab" aria-labelledby="h-evidence" hidden>
+  <h1 id="h-evidence" class="sr-only">Evidence</h1>
+  <div class="grid-evidence">
+    <article class="card span-tests">
+      <header class="card-h"><h2>Test suite</h2><span class="hint">Standard library <code>unittest</code></span></header>
+      <div class="tests-row">
+        <div class="mono huge" id="tests-count">—</div>
+        <div>
+          <div id="tests-status" class="badge" data-tone="neutral"><span class="dot"></span><span class="label">Not run in this session</span></div>
+          <p class="fine" id="tests-summary">Runs <code>python3 -m unittest discover -s tests -t .</code></p>
+        </div>
+        <button class="btn btn-primary" id="tests-btn">Run tests</button>
+      </div>
+    </article>
+
+    <article class="card span-limits">
+      <header class="card-h"><h2>Scope</h2></header>
+      <ul class="limits">
+        <li>All execution is simulated or hypothetical. No exchange account, funds, or real orders.</li>
+        <li>The synthetic market has a planted signal; results are not evidence of real-market profitability.</li>
+        <li>Freshness is time since local receipt, not the age of the data at its source.</li>
+        <li>Venue order records are in memory: deduplication does not survive a venue restart.</li>
+        <li>No claim of production readiness or exchange-grade latency.</li>
+      </ul>
+    </article>
+    <article class="card span-perf">
+      <header class="card-h"><h2>Published latency runs</h2><span class="hint">Agent-run, 16-vCPU KVM guest, one process, loopback</span></header>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col">Run</th><th scope="col" class="num">Fills</th><th scope="col" class="num">p50</th><th scope="col" class="num">p99</th><th scope="col" class="num">Max</th><th scope="col" style="width:34%">p50 · p99 · max, log scale</th><th scope="col" class="num">Mismatched</th></tr></thead>
+          <tbody id="perf-rows"></tbody>
+        </table>
+      </div>
+      <p class="fine">Application-level round trip, not network or exchange latency, and not throughput.</p>
+    </article>
+
+    <article class="card span-hashes">
+      <header class="card-h"><h2>Evidence files</h2>
+        <div class="hash-actions"><span id="hash-status" class="fine" role="status" aria-live="polite"></span><button class="btn" id="verify-btn">Verify SHA-256</button></div>
+      </header>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th scope="col">File</th><th scope="col">Published SHA-256</th><th scope="col">Status</th></tr></thead>
+          <tbody id="hash-rows"></tbody>
+        </table>
+      </div>
+    </article>
+
+  </div>
+</section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>
