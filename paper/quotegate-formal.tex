@@ -1,0 +1,543 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage[inline]{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{definition}{Definition}
+\newtheorem{invariant}{Invariant}
+\newtheorem{assumption}{Assumption}
+\theoremstyle{remark}
+\newtheorem*{remark}{Remark}
+
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Venues}{\mathcal{V}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{QuoteGate}\\[2pt]
+\large A Trading Pipeline That Refuses to Guess:\\
+Freshness-Gated Routing, Explicit Execution Uncertainty, and Reconciled Accounting\\[4pt]
+\normalsize A Formal Description}
+\author{QuoteGate team}
+\date{HackRU Fall 2026 --- Lucera Trading Systems Challenge}
+
+\begin{document}
+\maketitle
+
+%==========================================================================
+\section*{Inspiration}
+
+When a trading system loses money, people usually blame the strategy. Many losses come from
+the plumbing instead:
+\begin{itemize}[leftmargin=1.5em, itemsep=0pt]
+  \item an order executes but its acknowledgement never arrives;
+  \item a feed freezes, and the system keeps acting on a price hundreds of milliseconds old;
+  \item a duplicate execution report books the same fill twice;
+  \item the strategy believes it is flat while the venue shows it holding inventory.
+\end{itemize}
+None of these are alpha problems; they are correctness problems. A backtest that assumes perfect
+fills and instant acknowledgements never shows them.
+
+We wanted a system where each of those failures happens on purpose, is handled by an explicit
+rule, and leaves records anyone can reconcile afterwards. We started from one question:
+\emph{what should a trading system do when it does not know?} Our answer is that it never
+guesses.
+
+%==========================================================================
+\section*{What it does}
+
+QuoteGate is an end-to-end simulated trading workflow that excludes stale quotes, bounds
+positions, and reconciles venue fills with accounting. This section defines each stage
+formally, then reports results.
+
+%--------------------------------------------------------------------------
+\paragraph{Market data.}
+
+\begin{definition}[Venues and quotes]
+Let $\Venues$ be a finite, totally ordered set of venue identifiers (in the experiments,
+$\Venues = \{A, B\}$, with $A$ the reference venue). A quote from venue $v$ is
+\[
+  Q = (v,\ \sigma,\ n,\ b,\ a,\ s^b,\ s^a),
+\]
+with symbol $\sigma$, sequence number $n \in \Z_{\ge 1}$, bid and ask prices $b, a$ in integer
+ticks, and displayed sizes $s^b, s^a \in \Z_{\ge 1}$. All prices and quantities are integers.
+\end{definition}
+
+\begin{definition}[Quote validity]
+A quote is \emph{valid} if its fields are well typed and in range, $s^b, s^a \ge 1$, and
+$a > b$. A locked quote ($a = b$) counts as crossed and is invalid. Invalid quotes, and quotes
+with the wrong symbol or venue, invalidate the venue's current state
+(\code{book.py}, \code{INVALIDATING}).
+\end{definition}
+
+\paragraph{Sources.}
+The primary source is a synthetic market (defined below) streamed by venue
+simulators. The extension source is a 600-second capture of Coinbase Exchange's public BTC-USD
+\code{level2\_batch} feed, rebuilt into an L2 book in exact integer units ($0.01$~USD ticks,
+$10^{-8}$~BTC size units). The capture is read-only: no account, key or order entry exists in
+the code.
+
+%--------------------------------------------------------------------------
+\paragraph{Venue state and freshness gating.}
+
+The aggregator's book (\code{book.py}) keeps one state per venue. It is pure and clock-free:
+every time-dependent call takes an injected monotonic time $t$ in nanoseconds.
+
+\begin{definition}[Venue state]
+For each venue $v$ the book keeps a connection flag $c_v$, a connection epoch $e_v$
+(incremented on every connect), the last accepted sequence $n_v$ (reset to $0$ on connect), the
+last accepted quote $Q_v$, its local receipt time $r_v$, and an invalid flag $\iota_v$.
+\end{definition}
+
+\paragraph{Acceptance.}
+A quote $Q$ arriving with epoch $e$ is accepted if and only if
+\[
+  e = e_v \ \wedge\ c_v \ \wedge\ Q \text{ valid} \ \wedge\ n > n_v .
+\]
+A quote with $n = n_v$ is rejected as a duplicate and one with $n < n_v$ as out of order. A
+quote from a superseded epoch is rejected as \code{old\_epoch}. Accepting a quote sets
+$Q_v \leftarrow Q$, $r_v \leftarrow t$, $n_v \leftarrow n$. If $n > n_v + 1$, a gap is counted
+but the quote is still accepted.
+
+\begin{definition}[Feed status]
+With freshness threshold $\tau > 0$, the status of venue $v$ at time $t$ is
+\[
+  \mathrm{status}_v(t) =
+  \begin{cases}
+    \textsc{Disconnected} & \neg c_v,\\
+    \textsc{Invalid}      & c_v \wedge \iota_v,\\
+    \textsc{NoQuote}      & c_v \wedge \neg\iota_v \wedge Q_v = \varnothing,\\
+    \textsc{Stale}        & \text{otherwise, if } t - r_v \ge \tau,\\
+    \textsc{Fresh}        & \text{otherwise}.
+  \end{cases}
+\]
+The boundary is inclusive: a quote is stale at exactly $t - r_v = \tau$. The experiments use
+$\tau = 50$~ms. The networked market-data runs use $\tau = 100$~ms.
+\end{definition}
+
+\begin{remark}
+Freshness is elapsed \emph{local} time since receipt, not age at the source. A quote received
+just now may have been delayed arbitrarily before it arrived. The system claims nothing about
+source-to-receiver latency.
+\end{remark}
+
+%--------------------------------------------------------------------------
+\paragraph{Signal and information set.}
+
+For the reference venue's displayed sizes $s^b_t, s^a_t \ge 1$, the top-of-book displayed-size
+imbalance is computed exactly in integer basis points, truncating toward zero:
+\begin{equation}
+  I_t \;=\; \operatorname{trunc}\!\left( 10^4 \cdot \frac{s^b_t - s^a_t}{s^b_t + s^a_t} \right)
+  \ \text{bp} \;\in\; [-10^4, 10^4].
+\end{equation}
+The signal is defined only when $\mathrm{status}_A(t) = \textsc{Fresh}$.
+
+The strategy observes only (i) $A$'s accepted prices and displayed sizes, (ii) $A$'s locally
+observed freshness and connection state, and (iii) its own \emph{confirmed} position and order
+state. It never observes future quotes, simulator draws, the latent price, venue-side records,
+or evaluation results.
+
+%--------------------------------------------------------------------------
+\paragraph{Synthetic market model.}
+
+The model below is an illustrative assumption, not a market finding.
+
+\begin{definition}[Market]
+A latent price $p_t \in \Z$ (ticks) evolves in discrete steps of 10~ms. Venue $A$ quotes
+$[p_t,\ p_t + 1]$, a one-tick spread. Venue $B$ quotes at or outside $A$, so there is no
+cross-venue arbitrage. Displayed sizes are i.i.d.\ uniform on $\{1,\dots,100\}$. Each step:
+\begin{equation}
+  p_{t+1} - p_t =
+  \begin{cases}
+    +1 & \text{w.p. } m \cdot \tfrac{1 + \beta \hat I_t}{2},\\[2pt]
+    -1 & \text{w.p. } m \cdot \tfrac{1 - \beta \hat I_t}{2},\\[2pt]
+    \phantom{+}0 & \text{w.p. } 1 - m,
+  \end{cases}
+  \qquad m = 0.5,
+\end{equation}
+where $\hat I_t = I_t / 10^4 \in [-1, 1]$. The \emph{null} regime has $\beta = 0$ and the
+\emph{controlled} regime has $\beta = 0.5$.
+\end{definition}
+
+\begin{assumption}[Causality]
+$I_t$ is observable at step $t$ and affects only $p_{t+1} - p_t$ (verified by test). Market
+randomness comes from a generator separate from fault and execution randomness, and strategy
+actions never change the market stream. For a fixed seed, every configuration within a regime
+sees the identical quote stream.
+\end{assumption}
+
+%--------------------------------------------------------------------------
+\paragraph{Target-position policy.}
+
+The parameters were frozen before evaluation: $\theta = 2000$~bp ($0.2$), $q_{\max} = 5$,
+maximum order size $5$, cooldown $0$. The target position is
+\begin{equation}
+  q^\star_t =
+  \begin{cases}
+    +q_{\max} & I_t > \theta,\\
+    -q_{\max} & I_t < -\theta,\\
+    0         & |I_t| \le \theta \quad (\text{equality maps to } 0),
+  \end{cases}
+\end{equation}
+and the order quantity is $\Delta q_t = \operatorname{clip}(q^\star_t - q_t,\ -5,\ 5)$, where
+$q_t$ is the \emph{confirmed} position. There is one decision per step in the backtest and one
+per accepted reference quote in the live runner.
+
+\begin{definition}[Trading gate]
+An order is sent at $t$ only if all of the following hold:
+\[
+  \mathrm{status}_A(t) = \textsc{Fresh}
+  \ \wedge\ \text{no order outstanding}
+  \ \wedge\ \text{no outcome } \textsc{Unknown}
+  \ \wedge\ \Delta q_t \neq 0 .
+\]
+When $A$ is stale or invalid the position is \emph{held}, not assumed closed. There is no
+emergency liquidation policy.
+\end{definition}
+
+%--------------------------------------------------------------------------
+\paragraph{Smart order routing.}
+
+For side $d \in \{\text{buy}, \text{sell}\}$, quantity $Q \ge 1$, time $t$ and an optional
+allowed set $\mathcal{A} \subseteq \Venues$, the eligible set is
+\begin{equation}
+  E_d(Q, t) = \bigl\{\, v \in \mathcal{A} :
+     \mathrm{status}_v(t) = \textsc{Fresh}\ \wedge\ s_v^{d} \ge Q \,\bigr\},
+\end{equation}
+where $s_v^{\text{buy}} = s^a_v$ and $s_v^{\text{sell}} = s^b_v$. The router (\code{router.py})
+selects
+\begin{equation}
+  v^\star =
+  \begin{cases}
+    \arg\min_{v \in E} a_v & d = \text{buy},\\
+    \arg\max_{v \in E} b_v & d = \text{sell},
+  \end{cases}
+\end{equation}
+breaking ties by the lowest venue identifier. If $E = \varnothing$ there is no route. Every
+excluded venue is reported with its reason (its status, \code{insufficient\_quantity}, or
+\code{not\_allowed}). Orders are never split.
+
+%--------------------------------------------------------------------------
+\paragraph{Simulated execution with explicit uncertainty.}
+
+Orders are immediate-or-cancel limits at the observed price: a buy is limited at the observed
+ask and a sell at the observed bid. On arrival the venue checks the session, then fills a buy if
+its current ask is at most the limit (a sell if its current bid is at least the limit) and its
+displayed size covers the quantity. It fills fully or rejects with a reason
+(\code{price\_moved}, \code{insufficient\_quantity}, \code{session}, \code{bad\_order},
+\code{conflicting\_order\_id}, \code{store\_full}). A fill consumes displayed size until the
+venue's next quote. There are no partial fills, resting orders or retries. The fee is
+$f = 1$~tick per unit, with $1$~tick $= 0.01$ currency units.
+
+\begin{invariant}[Record before acknowledge]
+A venue records an order's outcome in its order store \emph{before} writing the execution
+report. Execution and status frames are never coalesced or dropped. Only quotes coalesce, under
+write backpressure.
+\end{invariant}
+
+\begin{invariant}[Idempotency]
+Resending a client order ID with an identical payload returns the stored outcome without
+re-execution. A different payload under the same ID is rejected as
+\code{conflicting\_order\_id}. The store holds at most $1024$ records, and an unreleased record
+is never evicted.
+\end{invariant}
+
+\paragraph{Order-outcome state machine.}
+Each order moves through the states below. Let $\eta$ be the ack timeout ($0.2$~s in the
+cross-VM runs), and let \textit{inst} be the venue's per-process instance identifier.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+From & Event & To \\
+\midrule
+\textsc{Sent}    & exec report (matching venue, instance, session) & \textsc{Filled} / \textsc{Rejected} \\
+\textsc{Sent}    & no exec within $\eta$, or disconnect while sent & \textsc{Unknown} \\
+\textsc{Unknown} & status: \code{found=true}                        & \textsc{Filled} / \textsc{Rejected} \\
+\textsc{Unknown} & status: \code{found=false}, same \textit{inst}   & \textsc{NotExecuted} \\
+\textsc{Unknown} & status: \code{found=false}, new \textit{inst}    & \textsc{LostRecord} (stays halted) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent While any order is \textsc{Unknown} or \textsc{LostRecord}, no new order is sent.
+Status queries are bounded (at most one in flight per order, at most $50$ per order), and the
+order is \textbf{never resent}. The same-instance \code{found=false} case is sound because
+records precede acknowledgements and unreleased records are never evicted. If the venue has
+restarted (a new instance), its in-memory store is gone, so \code{found=false} is not proof
+that the order never executed.
+
+%--------------------------------------------------------------------------
+\paragraph{Exact accounting and reconciliation.}
+
+For a booked fill of signed quantity $\Delta q$ at price $p$ with fee $f_{\text{fill}}$, the
+ledger (\code{ledger.py}) applies
+\begin{equation}
+  \text{cash} \leftarrow \text{cash} - p\,\Delta q - f_{\text{fill}},
+  \qquad
+  q \leftarrow q + \Delta q,
+\end{equation}
+with FIFO lot matching for realized P\&L.
+
+\begin{invariant}[Ledger]
+\begin{enumerate*}[label=(\roman*)]
+  \item A duplicate fill ID with identical content is a no-op.
+  \item Conflicting reuse of a fill ID raises an error.
+  \item A fill that would make $|q| > q_{\max}$ raises an error: the position bound is enforced
+        inside the ledger, not only in the strategy.
+\end{enumerate*}
+\end{invariant}
+
+Two ledgers are kept. The \emph{strategy-known} ledger contains the fills the strategy has
+confirmed. The \emph{evaluator-authoritative} ledger replays every venue fill record and is
+never shown to the strategy. They can differ only by outcomes still unresolved at the end of a
+run. Economics use the authoritative ledger. Terminal valuation is \emph{hypothetical}: open
+inventory is valued at the last fresh executable reference price (the bid if long, the ask if
+short), less a fee for that liquidation. No liquidation trade occurs.
+
+\begin{definition}[Reconciliation]
+Let $F_{\text{venue}}$ be the multiset of venue fill records and $F_{\text{ledger}}$ the booked
+fills. A run reconciles when $F_{\text{venue}} = F_{\text{ledger}}$, that is,
+\[
+  \#\text{mismatched} = \#\text{unbooked} = \#\text{extra} = 0 .
+\]
+\end{definition}
+
+%--------------------------------------------------------------------------
+\paragraph{Quant experiment (deterministic backtest).}
+Thirty seeds unseen during development (101--130), $5000$ steps each. The five cells are:
+(1)~no trading; (2)~null; (3)~controlled; (4)~controlled with a 2-step execution delay and
+1-step acknowledgement delay; (5)~controlled with faults ($A$'s feed silent for 50 of every 500
+steps, and $5\%$ of acknowledgements lost). Values are per-seed means $\pm$ sample standard
+deviation, in ticks$\times$units. \emph{Gross} is pre-fee and \emph{Net} is post-fee terminal
+liquidation-value P\&L. The hit rate is the share of steps with $|I_t| > \theta$ and a price
+move where $\operatorname{sign}(I_t) = \operatorname{sign}(p_{t+1} - p_t)$. It measures
+directional accuracy, not profitability.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Cell & Fills & Turnover & Gross P\&L & Net P\&L & Hit rate \\
+\midrule
+1 no trade      & 0    & 0     & 0               & 0                & .502 \\
+2 null          & 3317 & 16586 & $-8974 \pm 198$ & $-25563 \pm 293$ & .502 \\
+3 controlled    & 3317 & 16586 & $-7382 \pm 209$ & $-23971 \pm 308$ & .633 \\
+4 + delay       & 693  & 3463  & $-1846 \pm 152$ & $-5311 \pm 171$  & .633 \\
+5 + faults      & 2009 & 10043 & $-4430 \pm 281$ & $-14476 \pm 582$ & .633 \\
+\bottomrule
+\end{tabular}
+\caption{Fixed matrix, seeds 101--130. Paired controlled $-$ null gross P\&L:
+$+1592 \pm 107$, positive on 30/30 seeds.}
+\end{table}
+
+\paragraph{Break-even analysis.}
+A one-unit round trip costs the spread plus two fees, $s + 2f = 1 + 2 = 3$ ticks. With
+conditional up-probability $P \approx 0.63$ given $I_t > \theta$, holding for $H$ steps earns
+about
+\begin{equation}
+  \mathbb{E}[\text{gain}] \approx m\,(2P - 1)\,H \approx 0.5 \cdot 0.27 \cdot H \approx 0.13\,H
+  \ \text{ticks per unit}.
+\end{equation}
+Because $I_t$ is redrawn every step, positions turn over every $H \approx 1.5$ steps, so
+$0.13\,H \ll 3$ and losses are expected. Under delay, losses shrink only because fewer orders
+fill ($37.5\%$ rejected); loss per unit traded worsens. \textbf{A detectable signal is not a
+profitable one.} This is a negative result for this model, these frozen parameters and these
+seeds only. It is not a general impossibility result and not evidence about real markets.
+
+\paragraph{Systems results (separate populations).}
+These figures come from the networked runtime, not the backtest, and are not comparable to one
+another unless stated.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{0.36\linewidth}p{0.58\linewidth}@{}}
+\toprule
+Measurement & Result \\
+\midrule
+Test suite & 224 tests, standard library only, CI on every push \\
+Loopback order path (single process, seed 101, 2000 steps)
+  & 1217 sent / 1217 filled; 0 timeouts; 0 unresolved; reconciliation $0/0/0$;
+    $\max|q| = 5$; exec RTT p50 $\approx 53\,\mu$s \\
+Separate-process loopback (C3 local)
+  & 3012/3012 filled; exec RTT p50 $131.6\,\mu$s \\
+Cross-VM, normal (C3 remote, one run)
+  & 3012/3012 filled; exec RTT p50 / p99 $648.8 / 933.4\,\mu$s; ledger $=$ venue log \\
+Cross-VM, every 50th ack dropped (one run)
+  & 21 \textsc{Unknown}; 21/21 resolved by status query in $\approx 302$~ms; none resent;
+    0 duplicate executions; ledger $=$ venue log; $\max|q| = 5$ \\
+Freshness under faults (M4, loopback)
+  & 20 $\times$ SIGSTOP of venue $A$ for 300~ms: 0 of 60\,000 routed replies used a quote
+    aged $\ge 100$~ms; stale-detection delay p50 $\approx 0.46$~ms ($n = 20$) \\
+Route lookups (M3)
+  & $\approx 150\,\mu$s p50, unchanged by venue placement (lookups never contact a venue) \\
+\bottomrule
+\end{tabular}
+\caption{Agent-run systems measurements. RTTs are application-level (Python asyncio on both
+ends), measured on one host's monotonic clock. Cross-VM runs used the same LAN, possibly the
+same physical host.}
+\end{table}
+
+\paragraph{Real-data replay.}
+The same policy and accounting code ran on the Coinbase capture with \emph{hypothetical}
+execution: $9955$ messages, one session, zero reconnects, $9356$ top-of-book events. The policy
+used $q_{\max} = 5$ lots of $0.001$~BTC. Freshness is the local receipt age of the last applied
+book message.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Scenario & Orders & Filled & Pre-fee P\&L & Post-fee P\&L \\
+\midrule
+fee 0, delay 0        & 1798 & 227 & $-\$0.02$ & $-\$0.02$ \\
+fee 10 bp, delay 0    & 1798 & 227 & $-\$0.02$ & $-\$94.67$ \\
+fee 10 bp, delay 1    & 1955 & 267 & $-\$0.07$ & $-\$111.32$ \\
+\bottomrule
+\end{tabular}
+\caption{Replay is byte-identical across two runs. One 10-minute sample; not a finding.}
+\end{table}
+
+The reconciliation identities hold exactly in every scenario:
+\[
+  \text{pre-fee} = \text{realized} + \text{unrealized},
+  \qquad
+  \text{pre-fee} - \text{post-fee} = \text{fees paid} + \text{hypothetical liquidation fee}.
+\]
+The $1$-cent spread is about $0.0012$~bp, so hypothetical fees dominate.
+
+%==========================================================================
+\section*{How we built it}
+
+\begin{description}[leftmargin=1.5em, style=nextline, itemsep=2pt]
+  \item[Language and dependencies] Python~3.12, standard library only, built on
+        \code{asyncio}. Nothing to install on the runtime path.
+  \item[Pure, clock-free core] Book, router, strategy, matcher and ledger take an injected
+        \code{now\_ns}. Tests set time to the nanosecond, including exact staleness boundaries.
+        The runtime uses \code{time.monotonic\_ns()}.
+  \item[Transport] Newline-delimited JSON over persistent TCP, one connection per venue,
+        frames $\le 4$~KiB. Quotes, pings, orders, execution reports and status queries share
+        that connection with a single reader that demultiplexes them. Reconnect backoff starts
+        at 50~ms and doubles to a 1~s cap.
+  \item[Bounded memory] Frames, client connections ($\le 16$), outstanding orders ($1$),
+        outstanding pings ($1$), the order store ($1024$) and sample rings are all bounded.
+        Every drop increments a counter.
+  \item[Two harnesses, one logic] A deterministic step-based backtest (with injected delays,
+        dropped acks and outages) and a live asyncio runner share the book, strategy, router,
+        matcher and ledger code.
+  \item[Real data] Coinbase public WebSocket (\code{level2\_batch}), read through a minimal
+        standard-library WebSocket client with TLS certificate verification, and rebuilt into
+        an L2 book in exact integer units taken from the product metadata.
+  \item[Operations console] A local browser console (bound to 127.0.0.1) over the same code.
+        It shows venue health, route previews, fault injection, order lifecycle,
+        reconciliation, and the experiment matrix.
+  \item[Optional analytics] Post-run import into Tiger Cloud (TimescaleDB / PostgreSQL).
+        Database percentiles matched local recomputation exactly (0~ns difference). It is never
+        on the runtime path.
+  \item[Testing and CI] \code{unittest} (224 tests) and GitHub Actions on every push and pull
+        request.
+  \item[Paper] \LaTeX{} with pgfplots.
+  \item[Development tools] Claude Code (integration and review), Codex (an audit pass), and a
+        local Hermes agent for small delegated patches. Every patch was reviewed and re-tested
+        before it was applied, and several were rejected. No AI runs in the application.
+\end{description}
+
+%==========================================================================
+\section*{Challenges we ran into}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{Choosing what ``unknown'' means.} The hardest design question was not speed.
+        It was what to do when a fill might have happened. Resending risks a double execution;
+        assuming failure risks positions nobody is tracking. We chose the state machine above:
+        halt, ask the venue, and if the venue has lost its memory, stay halted.
+  \item \textbf{Defining freshness honestly.} We can only measure how long ago \emph{we}
+        received a quote, not how old it was at the source. The definition of
+        $\mathrm{status}_v(t)$ says so explicitly.
+  \item \textbf{Keeping the claims as narrow as the evidence.} Every number is labelled
+        human-run, agent-run, or recorded. Every measurement states exactly which clock and
+        which code path it covers.
+  \item \textbf{CI caught two real concurrency bugs.} A client sending a flood of requests could
+        starve the feed reader, and shutdown could hang while a client was still connected.
+        Both are fixed and covered by regression tests.
+  \item \textbf{The paper review caught our own errors.} An inventory count and some wording
+        about ``identical quote streams'' were wrong. We corrected the paper; the reproduced
+        data did not change.
+\end{itemize}
+
+%==========================================================================
+\section*{Accomplishments that we're proud of}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item A ledger that reconciles to \textbf{zero mismatched, zero unbooked, zero extra} fills
+        against the venue, including under dropped acknowledgements and disconnects.
+  \item Failure modes are \emph{tests}, not anecdotes: a lost ack after a fill, a disconnect
+        between execution and acknowledgement, a venue restart that loses its records,
+        duplicate execution reports, and conflicting reuse of an order ID.
+  \item In the cross-VM dropped-ack run, all 21 unknown orders were reconciled by status query
+        and none was resent. The position never exceeded its bound of 5.
+  \item An experiment anyone can reproduce: rerunning the matrix matched the paper's source on
+        every substantive field. Only the run ID differs.
+  \item Reporting a negative result honestly instead of tuning until it disappeared.
+  \item No dependencies: the full demo runs in seconds on any machine with Python~3.12.
+\end{itemize}
+
+%==========================================================================
+\section*{What we learned}
+
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item In trading infrastructure, ``I don't know'' is a valid state. The system goes wrong
+        only if it treats \textsc{Unknown} as ``yes'' or ``no''.
+  \item Latency numbers mean nothing until you say what is measured. Our $\approx 53\,\mu$s is
+        one process over loopback; across VMs it was $\approx 649\,\mu$s. We publish both and
+        explain why they are not comparable.
+  \item Fees and spread are the first thing a backtest should model, not the last. The
+        break-even inequality $0.13\,H \ll s + 2f$ decides the outcome before any tuning.
+  \item A detectable signal is not a profitable one: hit rate and P\&L answer different
+        questions.
+\end{itemize}
+
+%==========================================================================
+\section*{What's next for Quote Gate}
+
+\paragraph{Planned work.}
+\begin{itemize}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{Durable order state.} Persist the venue order store and the ledger so
+        deduplication survives restarts.
+  \item \textbf{Exchange sandbox.} Paper trading against a real exchange sandbox using the same
+        \textsc{Unknown}/reconciliation logic.
+  \item \textbf{Risk controls.} A kill switch, a maximum-loss limit, and an explicit, tested
+        policy for flattening positions.
+  \item \textbf{Richer execution.} Partial fills, queue position and market impact.
+  \item \textbf{Scaling the aggregator.} Separate feed handling from strategy and client work.
+        The single event loop is the expected next bottleneck, though not yet measured.
+\end{itemize}
+
+\paragraph{Current limitations.}
+
+\begin{assumption}[Synthetic validity]
+The quant results assume the declared synthetic model, in which the predictive relationship is
+planted. They say nothing about whether such a signal exists in real markets.
+\end{assumption}
+
+\begin{enumerate}[leftmargin=1.5em, itemsep=2pt]
+  \item \textbf{Single coordinator.} One aggregator process holds all strategy and ledger
+        state, and nothing is persisted. A restart loses positions, pending orders and
+        counters.
+  \item \textbf{In-memory venue store.} A venue restart loses its order records, so
+        deduplication is not restart-safe. The state machine handles this by staying halted
+        (\textsc{LostRecord}).
+  \item \textbf{Execution model.} No partial fills, queue position, hidden liquidity or market
+        impact.
+  \item \textbf{Sample sizes.} Cross-VM results are one seed and one run per configuration.
+        The real-data replay is one 10-minute capture, and \code{level2\_batch} has no sequence
+        numbers, so message gaps cannot be detected in it.
+  \item \textbf{Latency scope.} Neither latency figure is an exchange-grade claim, and the VMs
+        may share a physical host.
+\end{enumerate}
+
+\end{document}
