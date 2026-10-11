@@ -323,6 +323,13 @@ def quant_summary() -> dict:
             "paired": paired, "paired_stats": m["paired_vs_null"]["3_controlled-2_null:gross"]}
 
 
+# Who ran each published capture (recorded in docs/realdata.md, not in the capture files), keyed by
+# raw SHA-256 so a different capture in docs/realdata-results/ is never given this label.
+CAPTURE_PROVENANCE = {
+    "835e07e9029232fac005665f5f71a9fa3a1cd691054f9dfffd96cb589d1a6ebc": "agent-run",
+}
+
+
 def replay_summary() -> dict:
     d = os.path.join(ROOT, "docs/realdata-results")
     try:
@@ -331,12 +338,18 @@ def replay_summary() -> dict:
         return {"available": False}
     keys = ("orders", "filled", "rejected", "hit_rate", "fees_usd", "fee_bp_hypothetical",
             "delay_events", "pre_fee_terminal_liquidation_value_pnl_usd",
-            "post_fee_terminal_liquidation_value_pnl_usd", "final_position_lots", "max_abs_position")
+            "post_fee_terminal_liquidation_value_pnl_usd", "hypothetical_liquidation_fee_usd",
+            "final_position_lots", "final_position_btc", "orders_unresolved_at_end", "max_abs_position")
+    sha = man["raw_sha256"]
     return {"available": True, "label": rep["label"],
             "scenarios": {n: {k: s.get(k) for k in keys} for n, s in rep["scenarios"].items()},
             "capture": {"product": man["product_metadata"]["id"], "seconds": man["limits"]["seconds"],
                         "messages": man["messages"], "counts_by_type": man["counts_by_type"],
-                        "reconnects": man["reconnects"], "stop_reason": man["stop_reason"]}}
+                        "reconnects": man["reconnects"], "stop_reason": man["stop_reason"],
+                        "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                     time.gmtime(man["started_wall_ns"] // 1_000_000_000)),
+                        "raw_sha256": sha, "report_matches_capture": rep["capture_sha256"] == sha,
+                        "provenance": CAPTURE_PROVENANCE.get(sha, "not recorded")}}
 
 
 def evidence_summary() -> dict:

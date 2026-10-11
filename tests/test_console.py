@@ -1,5 +1,6 @@
 """Local operations console (quote_gate.console): HTTP API over a real loopback run."""
 import json
+import os
 import threading
 import time
 import unittest
@@ -67,7 +68,25 @@ class ConsoleApi(unittest.TestCase):
         self.assertTrue(q["available"])
         self.assertEqual(len(q["cells"]), 5)
         self.assertEqual(len(q["paired"]), len(q["seeds"]))
-        self.assertTrue(self.api("/api/replay")[1]["available"])
+        r = self.api("/api/replay")[1]
+        self.assertTrue(r["available"])
+        d = os.path.join(console.ROOT, "docs/realdata-results")
+        with open(os.path.join(d, "report.json")) as f:
+            rep = json.load(f)
+        with open(os.path.join(d, "manifest.json")) as f:
+            man = json.load(f)
+        cap = r["capture"]                                        # metadata derived from the source files
+        self.assertEqual(cap["raw_sha256"], man["raw_sha256"])
+        self.assertTrue(cap["report_matches_capture"])
+        self.assertEqual(cap["provenance"], "agent-run")          # docs/realdata.md: first capture, agent-run
+        self.assertEqual(cap["started_utc"], time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(man["started_wall_ns"] // 1_000_000_000)))
+        self.assertEqual(set(r["scenarios"]), set(rep["scenarios"]))
+        for name, s in r["scenarios"].items():
+            for k in ("pre_fee_terminal_liquidation_value_pnl_usd", "post_fee_terminal_liquidation_value_pnl_usd",
+                      "hypothetical_liquidation_fee_usd", "final_position_lots", "final_position_btc",
+                      "orders_unresolved_at_end"):
+                self.assertEqual(s[k], rep["scenarios"][name][k], (name, k))
         e = self.api("/api/evidence")[1]
         self.assertTrue(e["hashes"])
         self.assertEqual(console.verify_hashes()["all_match"], True)

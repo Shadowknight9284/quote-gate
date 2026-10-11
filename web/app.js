@@ -489,7 +489,7 @@ function renderRecon(r, unresolved) {
   if (!clean) {
     note.dataset.tone = explained ? "warn" : "bad";
     note.textContent = explained
-      ? `${n(r.unbooked_venue_fills)} venue fill(s) are not booked, and every one belongs to an unresolved order (${unresolved.map(([o]) => o).join(", ")}). The venue lost its record, so the strategy cannot know the outcome; it stays halted instead of guessing.`
+      ? `${n(r.unbooked_venue_fills)} venue fill(s) are not booked, and every one belongs to an unresolved order (${unresolved.map(([o]) => o).join(", ")}). The venue lost its record, so the strategy cannot know the outcome; it stays halted instead of guessing. An explained gap is identified uncertainty, not resolved accounting.`
       : "The ledger and the venue disagree on a fill that is not explained by an unresolved order.";
   }
 }
@@ -585,12 +585,16 @@ function renderReplay(r) {
   const grid = el("div", { class: "replay-grid" }, Object.entries(r.scenarios).map(([k, s]) => el("div", { class: "scn" }, [
     el("h3", { text: names[k] || k }),
     el("dl", {}, [["Orders", n(s.orders)], ["Filled", n(s.filled)], ["Size too small", n(s.rejected?.insufficient_quantity ?? 0)],
-      ["Hit rate", s.hit_rate?.toFixed(3) ?? "—"], ["Pre-fee P&L", usd(s.pre_fee_terminal_liquidation_value_pnl_usd)],
-      ["Post-fee P&L", usd(s.post_fee_terminal_liquidation_value_pnl_usd)]].map(([a, b]) => el("div", {}, [el("dt", { text: a }), el("dd", { text: b })]))),
+      ["Hit rate", s.hit_rate?.toFixed(3) ?? "—"],
+      ["Pre-fee P&L (hypothetical terminal liquidation value)", usd(s.pre_fee_terminal_liquidation_value_pnl_usd)],
+      ["Post-fee P&L (hypothetical terminal liquidation value)", usd(s.post_fee_terminal_liquidation_value_pnl_usd)],
+      ["Hypothetical closing fee (in post-fee)", usd(s.hypothetical_liquidation_fee_usd)],
+      ["Final position", `${signed(s.final_position_lots)} lots (${s.final_position_btc} BTC)`],
+      ["Unresolved orders at end", n(s.orders_unresolved_at_end)]].map(([a, b]) => el("div", {}, [el("dt", { text: a }), el("dd", { text: b })]))),
   ])));
   const cap = r.capture, cbt = cap.counts_by_type;
   host.replaceChildren(grid, el("p", { class: "fine", text:
-    `${cap.product} public order-book feed · ${cap.seconds} s · ${n(cap.messages)} messages (${n(cbt.snapshot)} snapshot, ${n(cbt.l2update)} updates, ${n(cbt.heartbeat)} heartbeats) · ${n(cap.reconnects)} reconnects. One 10-minute sample; lots of 0.001 BTC, position limit 0.005 BTC. Raw data is not redistributed.` }));
+    `${cap.product} public order-book feed · ${cap.provenance} capture started ${cap.started_utc} · raw SHA-256 ${cap.raw_sha256.slice(0, 8)}… · ${cap.seconds} s · ${n(cap.messages)} messages (${n(cbt.snapshot)} snapshot, ${n(cbt.l2update)} updates, ${n(cbt.heartbeat)} heartbeats) · ${n(cap.reconnects)} reconnects. One historical 10-minute sample; lots of 0.001 BTC, position limit 0.005 BTC. P&L values the open position at the last valid touch with no closing trade made; post-fee value includes a hypothetical closing fee. Raw data is not redistributed.` }));
 }
 
 async function runJob(name, onDone, btn) {
