@@ -696,9 +696,10 @@ function verify() {
 function runTests() {
   const b = $("#tests-status");
   setTone(b, "accent", "Running…");
-  $("#tests-summary").textContent = "Running python3 -m unittest discover -s tests -t .";
+  $("#tests-summary").textContent = "Running the full suite…";
   runJob("tests", (r) => {
     if (r.error) { setTone(b, "bad", "Error"); $("#tests-summary").textContent = r.error; return; }
+    $("#tests-count").classList.add("has-value");
     tween($("#tests-count"), r.ran);
     setTone(b, r.ok ? "good" : "bad", r.ok ? "Passing" : "Failing");
     $("#tests-summary").textContent = `${r.summary} · ${r.seconds} s`;

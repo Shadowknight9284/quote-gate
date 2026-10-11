@@ -158,6 +158,8 @@ code { font-size: 0.9em; color: var(--brand); background: var(--surface-2); padd
 .rail-brand { display: block; padding: 2px 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .rail-brand img { display: block; width: 100%; height: auto; max-width: 180px; margin: 0 auto; }
 .rail-section { font-size: 12px; font-weight: 500; color: var(--dim); padding: 10px 12px 6px; }
+.rail-spacer { flex: 1; }
+.rail-section-about { border-top: 1px solid var(--line); padding-top: 14px; }
 .rail-item {
   position: relative; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 14px;
   border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted);
@@ -414,8 +416,13 @@ main { position: relative; z-index: 1; padding: calc(var(--top) + 36px) 36px 64p
 .scn dl div { display: flex; justify-content: space-between; gap: 8px; }
 .scn dt { color: var(--dim); }
 .scn dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-.tests-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 22px; }
-.tests-row .fine { margin-top: 6px; }
+.tests-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.tests-left { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.tests-stat { display: flex; align-items: baseline; gap: 10px; }
+#tests-count { color: var(--dim); font-variant-numeric: tabular-nums; }
+#tests-count.has-value { color: var(--text); }
+.cmd { margin: 12px 0 0; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); overflow-x: auto; white-space: pre; }
+.cmd code { background: none; padding: 0; font-size: 13px; color: var(--brand); }
 .limits { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 10px; line-height: 1.55; }
 .hash-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -500,13 +507,13 @@ main { position: relative; z-index: 1; padding: calc(var(--top) + 36px) 36px 64p
   .top-status { order: 3; flex-basis: 100%; flex-wrap: wrap; }
   .run-controls .field span { display: none; }
   .rail { position: sticky; top: 0; inset: auto; width: auto; flex-direction: row; justify-content: space-around; padding: 6px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .rail-brand, .rail-section { display: none; }
+  .rail-brand, .rail-section, .rail-spacer { display: none; }
   .rail-item { width: auto; flex: 1; }
   main { padding: 16px; }
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .venues, .replay-grid, .stats4, .map-grid, .report-cols { grid-template-columns: 1fr 1fr; }
   .span-route, .span-faults, .span-file { grid-column: span 12; }
-  .tests-row { grid-template-columns: 1fr; }
+  .tests-row { flex-wrap: wrap; }
   .events li { grid-template-columns: 60px 28px 1fr; }
   .events .k { display: none; }
   .status-strip { grid-template-columns: auto 1fr; }
