@@ -25,7 +25,7 @@ const DECISIONS = [
 const REASONS = { stale: "stale", disconnected: "disconnected", invalid: "invalid", no_quote: "no quote",
   insufficient_quantity: "size too small", not_allowed: "not allowed" };
 
-const state = { tab: "live", snap: null, busy: false, history: { sent: [], filled: [] }, seenEvents: new Set(),
+const state = { tab: "live", snap: null, busy: false, history: { sent: [], filled: [] }, seenEvents: new Map(),
   guide: null, faultStates: {}, sawRun: false, scorecardShown: false, fills: { broker: null, bot: null },
   lastLife: {}, filter: "all", quantLoaded: false, evidenceLoaded: false };
 
@@ -83,6 +83,14 @@ function tween(node, value, format = n) {
     if (k < 1) node._raf = requestAnimationFrame(step);
   };
   node._raf = requestAnimationFrame(step);
+}
+
+// Live counts and states are shown exactly as received, never animated through intermediate values.
+function setNum(node, value) {
+  if (!node) return;
+  cancelAnimationFrame(node._raf);
+  node._v = value;
+  node.textContent = n(value);
 }
 
 function setTone(node, tone, label) {
@@ -169,24 +177,24 @@ async function fault(kind, venue = "A") {
 }
 
 // ---------- polling ----------
-let pollTimer;
-async function poll(now = false) {
+let pollTimer, renderFrame = 0;
+async function poll() {
   clearTimeout(pollTimer);
-  if (state.busy && !now) return schedule();
+  if (state.busy) { state.pollAgain = true; return; }   // one request at a time; a forced poll runs right after
   state.busy = true;
   try {
     const detail = state.tab === "orders" ? "?detail=1" : "";
-    const snap = await api(`/api/live${detail}`);
-    state.snap = snap;
-    render(snap);
+    state.snap = await api(`/api/live${detail}`);
+    if (!renderFrame) renderFrame = requestAnimationFrame(() => { renderFrame = 0; render(state.snap); });
   } catch (err) {
     setTone($("#trading-badge"), "bad", "Console offline");
   } finally {
     state.busy = false;
-    schedule();
+    if (state.pollAgain) { state.pollAgain = false; poll(); } else schedule();
   }
 }
 function schedule() {
+  clearTimeout(pollTimer);
   const s = state.snap?.state;
   const active = s === "running" || s === "starting" || s === "settling";
   pollTimer = setTimeout(poll, active ? (state.tab === "orders" ? 500 : 250) : 1500);
@@ -201,7 +209,7 @@ function render(s) {
   btn.classList.toggle("btn-stop", active);
   $("span", btn).textContent = active ? (s.state === "settling" ? "Settling…" : "Stop run") : "Start run";
   btn.disabled = s.state === "settling";
-  $("svg", btn).innerHTML = active ? '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>' : '<path d="M4 2.5v11l9-5.5z" fill="currentColor"/>';
+  if (btn._active !== active) btn._active = active, $("svg", btn).innerHTML = active ? '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>' : '<path d="M4 2.5v11l9-5.5z" fill="currentColor"/>';
   $("#seed").disabled = active;
   $("#seconds").disabled = active;
   $$("[data-fault], [data-venue-act]").forEach((b) => {
@@ -242,13 +250,13 @@ function render(s) {
 function renderLive(s) {
   const c = s.counters;
   const rejected = Object.values(c.rejected).reduce((a, b) => a + b, 0);
-  tween($('[data-k="sent"]'), c.sent);
-  tween($('[data-k="filled"]'), c.filled);
-  tween($('[data-k="rejected"]'), rejected);
+  setNum($('[data-k="sent"]'), c.sent);
+  setNum($('[data-k="filled"]'), c.filled);
+  setNum($('[data-k="rejected"]'), rejected);
   $('[data-k="rejected-why"]').textContent = rejected ? Object.entries(c.rejected).map(([k, v]) => `${REASONS[k] || k.replace(/_/g, " ")} ${n(v)}`).join(" · ") : "none";
   const stuck = s.unresolved.filter(([, st]) => st !== "SENT");
   const inflight = s.unresolved.length - stuck.length;
-  tween($('[data-k="unresolved"]'), stuck.length);
+  setNum($('[data-k="unresolved"]'), stuck.length);
   $('[data-k="unresolved-why"]').textContent = (stuck.length ? stuck.map(([o, st]) => `${o} ${st.replace("_", " ")}`).join(", ") : "none UNKNOWN or lost")
     + (inflight ? ` · ${inflight} in flight` : "");
   for (const k of ["sent", "filled"]) {
@@ -257,22 +265,24 @@ function renderLive(s) {
     spark($(`[data-spark="${k}"]`), h);
   }
   for (const vid of ["A", "B"]) renderVenue(vid, s.venues[vid], s.stale_ms, s.state === "running");
-  renderTimeline(s.timeline);
+  renderTimeline(s.timeline, s.elapsed_s);
   renderStrategy(s);
   renderRoute(s.route_preview);
-  tween($('[data-k="timeouts"]'), c.timeouts + c.unknown_disconnect);
-  tween($('[data-k="by-status"]'), c.resolved_by_status + c.resolved_not_received);
-  tween($('[data-k="lost"]'), c.lost_record);
+  setNum($('[data-k="timeouts"]'), c.timeouts + c.unknown_disconnect);
+  setNum($('[data-k="by-status"]'), c.resolved_by_status + c.resolved_not_received);
+  setNum($('[data-k="lost"]'), c.lost_record);
   renderEvents(s);
 }
 
 function spark(node, data) {
-  node.replaceChildren();
-  if (data.length < 2) return;
+  if (!node.childElementCount) node.append(svg("path", { class: "area" }), svg("path", { class: "line" }));
+  const [area, line] = node.children;
+  if (data.length < 2) { area.removeAttribute("d"); line.removeAttribute("d"); return; }
   const max = Math.max(...data), min = Math.min(...data), span = max - min || 1;
   const pts = data.map((v, i) => [(i / (data.length - 1)) * 120, 26 - ((v - min) / span) * 24]);
   const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
-  node.append(svg("path", { class: "area", d: `${d}L120,28L0,28Z` }), svg("path", { class: "line", d }));
+  area.setAttribute("d", `${d}L120,28L0,28Z`);
+  line.setAttribute("d", d);
 }
 
 function venueTemplate(vid) {
@@ -339,27 +349,40 @@ function renderVenue(vid, v, staleMs, running) {
   $('[data-venue-act="drop"]', root).disabled = !running;
 }
 
-function renderTimeline(tl) {
+// Segments are placed at their run time (elapsed + relative time) and redrawn from each snapshot; only
+// the view's horizontal offset is eased between snapshots (presentation only, never the statuses).
+function renderTimeline(tl, elapsed) {
   const root = $("#timeline");
-  root.replaceChildren();
-  const W = tl.window_s;
+  const W = tl.window_s, u = 1000 / W;
   let summary = [];
   for (const vid of Object.keys(tl.transitions)) {
-    const row = el("div", { class: "tl-row" }, [el("span", { class: "tl-label mono", text: vid })]);
-    const bar = svg("svg", { viewBox: "0 0 1000 20", preserveAspectRatio: "none", class: "tl-bar" });
+    let row = $(`[data-tl="${vid}"]`, root);
+    if (!row) {
+      const bar = svg("svg", { viewBox: "0 0 1000 20", preserveAspectRatio: "none", class: "tl-bar" });
+      bar.append(svg("g", { class: "tl-track" }));
+      row = el("div", { class: "tl-row", "data-tl": vid }, [el("span", { class: "tl-label mono", text: vid }), bar]);
+      root.append(row);
+    }
+    const track = $(".tl-track", row);
     const segs = [];
     let cur = tl.start[vid], t0 = -W;
     for (const [t, to] of tl.transitions[vid]) { segs.push([t0, t, cur]); cur = to; t0 = t; }
     segs.push([t0, 0, cur]);
-    for (const [a, b, st] of segs) {
-      if (b <= a) continue;
+    track.replaceChildren(...segs.filter(([a, b]) => b > a).map(([a, b, st]) => {
       const tone = st ? (STATUS[st] || STATUS.no_quote).tone : null;
-      bar.append(svg("rect", { x: ((a + W) / W) * 1000, y: 2, width: Math.max(1, ((b - a) / W) * 1000), height: 16, rx: 2,
-        fill: tone ? `var(--${tone})` : "var(--surface-3)", opacity: tone === "good" ? 0.75 : 0.9 }));
+      return svg("rect", { x: ((elapsed + a) * u).toFixed(2), y: 2, width: Math.max(1, (b - a) * u).toFixed(2), height: 16, rx: 2,
+        fill: tone ? `var(--${tone})` : "var(--surface-3)", opacity: tone === "good" ? 0.75 : 0.9 });
+    }));
+    if (track._t === undefined || elapsed < track._t || elapsed - track._t > 2) {   // new run or tab switch: jump
+      track.style.transition = "none";
+      track.style.transform = `translateX(${(-(elapsed - W) * u).toFixed(2)}px)`;
+      track.getBoundingClientRect();
+      track.style.transition = "";
+    } else {
+      track.style.transform = `translateX(${(-(elapsed - W) * u).toFixed(2)}px)`;
     }
+    track._t = elapsed;
     summary.push(`${vid}: ${cur || "no data"}`);
-    row.append(bar);
-    root.append(row);
   }
   root.setAttribute("aria-label", `Feed status over the last ${W} seconds. Now: ${summary.join(", ")}`);
 }
@@ -418,16 +441,16 @@ function renderEvents(s) {
   const rows = s.events.filter(([, , k]) => state.filter === "all" || EVENT_GROUP[k] === state.filter);
   const frag = document.createDocumentFragment();
   for (const [t, vid, kind, text] of rows) {
-    const key = `${(s.elapsed_s + t).toFixed(2)}|${vid}|${text}`;
+    const at = s.elapsed_s + t, key = `${vid}|${kind}|${text}`, seen = state.seenEvents.get(key) || [];
     const li = el("li", { "data-tone": eventTone(kind, text) }, [
       el("span", { class: "t", text: `${t.toFixed(1)} s` }), el("span", { class: "v", text: vid }),
       el("span", { class: "k", text: cap(kind) }), el("span", { class: "msg", text })]);
-    if (!state.seenEvents.has(key)) { li.classList.add("new"); state.seenEvents.add(key); }
+    if (!seen.some((x) => Math.abs(x - at) < 0.05)) { li.classList.add("new"); seen.push(at); state.seenEvents.set(key, seen); }
     frag.append(li);
   }
   if (!rows.length) frag.append(el("li", { class: "empty-row", text: "No events yet." }));
   host.replaceChildren(frag);
-  if (state.seenEvents.size > 2000) state.seenEvents = new Set([...state.seenEvents].slice(-500));
+  if (state.seenEvents.size > 2000) state.seenEvents = new Map([...state.seenEvents].slice(-500));
 }
 
 // ---------- render: orders ----------
@@ -485,7 +508,7 @@ function renderLifecycle(v) {
       host.append(g);
     }
   }
-  for (const [k] of nodes) tween($(`[data-nc="${k}"]`, host), v[k]);
+  for (const [k] of nodes) setNum($(`[data-nc="${k}"]`, host), v[k]);
   for (const [k] of edges) {
     const prev = state.lastLife[k] ?? v[k];
     $(`[data-ec="${k}"]`, host).textContent = n(v[k]);
@@ -497,8 +520,8 @@ function renderLifecycle(v) {
 const ICON_OK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ICON_X = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 function renderRecon(r, unresolved) {
-  tween($("#recon-venue"), r.venue_fills);
-  tween($("#recon-ledger"), r.ledger_fills);
+  setNum($("#recon-venue"), r.venue_fills);
+  setNum($("#recon-ledger"), r.ledger_fills);
   const checks = [["Mismatched price / qty / fee", r.mismatched, r.mismatched === 0],
     ["Venue fills not in ledger", r.unbooked_venue_fills, r.unbooked_venue_fills === 0 || r.unbooked_all_unresolved],
     ["Ledger fills not at venue", r.ledger_not_at_venue, r.ledger_not_at_venue === 0]];
@@ -517,7 +540,7 @@ function renderRecon(r, unresolved) {
   if (!clean) {
     note.dataset.tone = explained ? "warn" : "bad";
     note.textContent = explained
-      ? `${n(r.unbooked_venue_fills)} venue fill(s) are not booked, and every one belongs to an unresolved order (${unresolved.map(([o]) => o).join(", ")}). The venue lost its record, so the strategy cannot know the outcome; it stays halted instead of guessing.`
+      ? `${n(r.unbooked_venue_fills)} venue fill(s) are not booked, and every one belongs to an unresolved order (${unresolved.map(([o]) => o).join(", ")}). The venue lost its record, so the strategy cannot know the outcome; it stays halted instead of guessing. An explained gap is identified uncertainty, not resolved accounting.`
       : "The ledger and the venue disagree on a fill that is not explained by an unresolved order.";
   }
 }
@@ -613,12 +636,16 @@ function renderReplay(r) {
   const grid = el("div", { class: "replay-grid" }, Object.entries(r.scenarios).map(([k, s]) => el("div", { class: "scn" }, [
     el("h3", { text: names[k] || k }),
     el("dl", {}, [["Orders", n(s.orders)], ["Filled", n(s.filled)], ["Size too small", n(s.rejected?.insufficient_quantity ?? 0)],
-      ["Hit rate", s.hit_rate?.toFixed(3) ?? "—"], ["Pre-fee P&L", usd(s.pre_fee_terminal_liquidation_value_pnl_usd)],
-      ["Post-fee P&L", usd(s.post_fee_terminal_liquidation_value_pnl_usd)]].map(([a, b]) => el("div", {}, [el("dt", { text: a }), el("dd", { text: b })]))),
+      ["Hit rate", s.hit_rate?.toFixed(3) ?? "—"],
+      ["Pre-fee P&L (hypothetical terminal liquidation value)", usd(s.pre_fee_terminal_liquidation_value_pnl_usd)],
+      ["Post-fee P&L (hypothetical terminal liquidation value)", usd(s.post_fee_terminal_liquidation_value_pnl_usd)],
+      ["Hypothetical closing fee (in post-fee)", usd(s.hypothetical_liquidation_fee_usd)],
+      ["Final position", `${signed(s.final_position_lots)} lots (${s.final_position_btc} BTC)`],
+      ["Unresolved orders at end", n(s.orders_unresolved_at_end)]].map(([a, b]) => el("div", {}, [el("dt", { text: a }), el("dd", { text: b })]))),
   ])));
   const cap = r.capture, cbt = cap.counts_by_type;
   host.replaceChildren(grid, el("p", { class: "fine", text:
-    `${cap.product} public order-book feed · ${cap.seconds} s · ${n(cap.messages)} messages (${n(cbt.snapshot)} snapshot, ${n(cbt.l2update)} updates, ${n(cbt.heartbeat)} heartbeats) · ${n(cap.reconnects)} reconnects. One 10-minute sample; lots of 0.001 BTC, position limit 0.005 BTC. Raw data is not redistributed.` }));
+    `${cap.product} public order-book feed · ${cap.provenance} capture started ${cap.started_utc} · raw SHA-256 ${cap.raw_sha256.slice(0, 8)}… · ${cap.seconds} s · ${n(cap.messages)} messages (${n(cbt.snapshot)} snapshot, ${n(cbt.l2update)} updates, ${n(cbt.heartbeat)} heartbeats) · ${n(cap.reconnects)} reconnects. One historical 10-minute sample; lots of 0.001 BTC, position limit 0.005 BTC. P&L values the open position at the last valid touch with no closing trade made; post-fee value includes a hypothetical closing fee. Raw data is not redistributed.` }));
 }
 
 async function runJob(name, onDone, btn) {
