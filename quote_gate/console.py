@@ -28,10 +28,12 @@ import tempfile
 import threading
 import time
 from collections import deque
+from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import fillcheck
 from .aggregator import Aggregator
 from .book import Book
 from .live import LiveRunner, venue_reconciliation
@@ -44,7 +46,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(ROOT, "web")
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/app.css": ("app.css", "text/css; charset=utf-8"),
-          "/app.js": ("app.js", "text/javascript; charset=utf-8")}
+          "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+          "/logo.png": ("logo.png", "image/png"),
+          "/favicon.png": ("favicon.png", "image/png"),
+          "/favicon.ico": ("favicon.png", "image/png"),
+          "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png")}
 
 RATE_HZ = 500                     # same offered rate as the published loopback runs
 STALE_NS = 50_000_000             # same threshold as the order-path runner
@@ -55,8 +61,21 @@ TIMELINE_S = 30
 RTT_BINS_PER_DECADE = 8
 RTT_MIN_US, RTT_MAX_US = 10, 10_000
 MAX_BODY = 4096
-FAULTS = {"pause_feed", "resume_feed", "drop_connection",
+MAX_FILLCHECK_BODY = 4 * fillcheck.MAX_BYTES + 4096     # two CSVs, allowing for JSON escaping
+FAULTS = {"pause_feed", "pause_feed_1s", "resume_feed", "drop_connection",
           "drop_next_ack", "disconnect_after_exec", "restart_mid_order"}
+FAULT_CHECK_S = 0.02              # how often pending fault outcomes are evaluated
+FAULT_TIMEOUT_S = 5.0             # a fault whose expected outcome is not seen by then is "not observed"
+MAX_FAULTS = 100
+EXPECT = {
+    "pause_feed": "venue goes stale within 50 ms and is excluded from routing",
+    "pause_feed_1s": "venue goes stale within 50 ms, then fresh again after the 1 s pause",
+    "resume_feed": "venue is fresh again",
+    "drop_connection": "venue disconnects and reconnects with a new epoch",
+    "drop_next_ack": "order goes UNKNOWN, trading halts, a status query resolves it; nothing is resent",
+    "disconnect_after_exec": "order goes UNKNOWN on disconnect, then is resolved via status after reconnecting",
+    "restart_mid_order": "venue loses its records; the order stays unresolved and trading stays halted",
+}
 ORDER_FAULTS = {"drop_next_ack", "disconnect_after_exec", "restart_mid_order"}   # venue A only
 
 
@@ -113,6 +132,8 @@ class Session:
         self.final: dict | None = None
         self.error: str | None = None
         self.policy = PolicyConfig()
+        self.faults: list[dict] = []                # injected faults and their observed outcomes
+        self._fault_check: asyncio.Task | None = None
 
     async def start(self) -> None:
         # Extra steps so a reconnect (which restarts the venue's stream) cannot exhaust it early.
@@ -148,12 +169,17 @@ class Session:
             self.state = "complete"
 
     # ---- faults (each maps to a labelled Venue hook) ----
-    def fault(self, kind: str, venue_id: str) -> str:
+    def fault(self, kind: str, venue_id: str) -> dict:
         v = self.venues[venue_id]
         r = self.runner
+        rec = self._record_fault(kind, venue_id)
         if kind == "pause_feed":
             v.pause()
             text = "feed paused (venue keeps its own book; quotes are not sent)"
+        elif kind == "pause_feed_1s":
+            v.pause()
+            asyncio.get_running_loop().call_later(1.0, v.resume)
+            text = "feed paused for 1 s, then resumed"
         elif kind == "resume_feed":
             v.resume()
             text = "feed resumed"
@@ -170,7 +196,76 @@ class Session:
             asyncio.get_running_loop().create_task(self._restart_mid_order(v))
             text = "dropping the next ack, then restarting the venue (order store lost)"
         r.note(venue_id, "fault", text)
-        return text
+        if self._fault_check is None or self._fault_check.done():
+            self._fault_check = asyncio.get_running_loop().create_task(self._check_faults())
+        return {"id": rec["id"], "note": text, "expect": rec["expect"]}
+
+    def _record_fault(self, kind: str, venue_id: str) -> dict:
+        c = self.runner.c
+        rec = {"id": len(self.faults) + 1, "kind": kind, "venue": venue_id, "t_ns": time.monotonic_ns(),
+               "expect": EXPECT[kind], "state": "pending", "observed_ms": None, "detail": None,
+               "base": {"timeouts": c.timeouts, "unknown_disconnect": c.unknown_disconnect,
+                        "resolved": c.resolved_by_status + c.resolved_not_received,
+                        "lost": c.lost_record, "connects": self.agg.connects[venue_id]}}
+        if len(self.faults) < MAX_FAULTS:
+            self.faults.append(rec)
+        return rec
+
+    async def _check_faults(self) -> None:
+        """Mark each pending fault handled once its expected outcome appears in the running system."""
+        while any(f["state"] == "pending" for f in self.faults):
+            await asyncio.sleep(FAULT_CHECK_S)
+            now = time.monotonic_ns()
+            events = self.agg.events.items()
+            for f in self.faults:
+                if f["state"] != "pending":
+                    continue
+                result = self._fault_outcome(f, events)
+                if result is not None:
+                    f["state"], f["detail"] = "handled", result[1]
+                    f["observed_ms"] = round((result[0] - f["t_ns"]) / 1e6, 1)
+                elif now - f["t_ns"] > FAULT_TIMEOUT_S * 1e9:
+                    f["state"] = "not_observed"
+                    f["detail"] = ("no order was sent to fault (trading halted or no signal)"
+                                   if f["kind"] in ORDER_FAULTS else "expected change not seen")
+
+    def _fault_outcome(self, f: dict, events: list):
+        """(observed monotonic ns, detail) when the expected outcome has happened, else None."""
+        c, b, vid, t0 = self.runner.c, f["base"], f["venue"], f["t_ns"]
+        after = [(t, k, d) for t, v, k, d in events if v == vid and t >= t0]
+        status = [(t, d) for t, k, d in after if k == "status"]
+        now = time.monotonic_ns()
+        kind = f["kind"]
+        if kind in ("pause_feed", "pause_feed_1s"):
+            stale = next(((t, d) for t, d in status if d["to"] in ("stale", "disconnected")), None)
+            if stale is None:
+                return None
+            age = stale[1].get("quote_age_ns")
+            detail = f"{stale[1]['to']} (last quote {age / 1e6:.1f} ms old); excluded from routing" \
+                if age is not None else stale[1]["to"]
+            if kind == "pause_feed":
+                return stale[0], detail
+            fresh = next((t for t, d in status if t > stale[0] and d["to"] == "fresh"), None)
+            return None if fresh is None else \
+                (stale[0], detail + f"; fresh again {(fresh - t0) / 1e6:,.0f} ms after the pause began")
+        if kind == "resume_feed":
+            fresh = next((t for t, d in status if d["to"] == "fresh"), None)
+            if fresh is None and self.book.status(vid, now).value == "fresh":
+                fresh = now
+            return None if fresh is None else (fresh, "fresh again")
+        if kind == "drop_connection":
+            conn = next(((t, d) for t, k, d in after if k == "connect"), None)
+            return None if conn is None else (conn[0], f"reconnected: epoch {conn[1]['epoch']}")
+        resolved = c.resolved_by_status + c.resolved_not_received
+        if kind == "drop_next_ack" and c.timeouts > b["timeouts"] and resolved > b["resolved"]:
+            return now, "ack timeout → UNKNOWN → status query → resolved; not resent"
+        if kind == "disconnect_after_exec" and c.unknown_disconnect > b["unknown_disconnect"] \
+                and resolved > b["resolved"]:
+            return now, "UNKNOWN on disconnect → reconnected → resolved via status; not resent"
+        if kind == "restart_mid_order" and c.lost_record > b["lost"]:
+            lost = [p.oid for p in self.runner.pending.values() if p.state == "LOST_RECORD"]
+            return now, f"{', '.join(lost) or 'order'} unresolvable; trading halted instead of guessing"
+        return None
 
     async def _restart_mid_order(self, v: Venue) -> None:
         """Same sequence as test_venue_restart_with_lost_record_stays_unresolved."""
@@ -181,6 +276,9 @@ class Session:
         while r.c.timeouts == before:
             if time.monotonic() > t_end or self.state != "running":
                 r.note(v.venue_id, "fault", "restart skipped: no order timed out (is trading halted?)")
+                for f in self.faults:
+                    if f["kind"] == "restart_mid_order" and f["state"] == "pending":
+                        f["state"], f["detail"] = "skipped", "no order timed out (trading halted or no signal)"
                 return
             await asyncio.sleep(0.005)
         v.restart_lose_store()
@@ -233,6 +331,9 @@ class Session:
                        "cash_ticks": r.ledger.cash_ticks, "fees_ticks": r.ledger.fees_ticks,
                        "realized_gross_ticks": r.ledger.realized_gross_ticks},
             "unresolved": [[p.oid, p.state] for p in r.pending.values()],
+            "pnl": self._pnl(),
+            "faults": [{k: f[k] for k in ("id", "kind", "venue", "expect", "state", "observed_ms", "detail")}
+                       for f in self.faults],
             "timeline": self._timeline(now),
             "events": self._events(now),
         }
@@ -243,6 +344,12 @@ class Session:
             out["reconcile_ns"] = r.reconcile_ns.summary()
             out["feed_rtt"] = {v: self.agg.feed_rtt_ns[v].summary() for v in book.venues}
         return out
+
+    def _pnl(self) -> dict:
+        """Cash plus open position at venue A's last executable price (hypothetical; no closing trade)."""
+        q, led = self.book.venues["A"].quote, self.runner.ledger
+        mark = led.mark_price(q.bid_ticks if q else None, q.ask_ticks if q else None)
+        return {"equity_ticks": led.equity_ticks(mark), "mark_ticks": mark if led.position else None}
 
     def _timeline(self, now: int) -> dict:
         """Status transitions in the last TIMELINE_S seconds, plus each venue's state at the start."""
@@ -405,6 +512,80 @@ def reproduce_matrix() -> dict:
 JOBS = {"tests": run_tests, "reproduce": reproduce_matrix, "verify": verify_hashes}
 
 
+# ---- fill check (user-supplied CSVs; processed in memory, never stored) ----
+
+def _csv_field(body: dict, name: str) -> str:
+    v = body.get(name)
+    if not isinstance(v, str) or not v.strip():
+        raise BadRequest(f"{name} must be the CSV file's text")
+    return v
+
+
+def _mapping_field(body: dict, name: str) -> dict | None:
+    v = body.get(name)
+    if v is None:
+        return None
+    if not isinstance(v, dict) or any(k not in fillcheck.FIELDS or (x is not None and not isinstance(x, str))
+                                      for k, x in v.items()):
+        raise BadRequest(f"{name} must map {', '.join(fillcheck.FIELDS)} to column names")
+    return v
+
+
+def _positive_decimal(body: dict, name: str) -> Decimal | None:
+    v = body.get(name)
+    if v in (None, ""):
+        return None
+    try:
+        d = Decimal(str(v))
+    except InvalidOperation:
+        raise BadRequest(f"{name} must be a number") from None
+    if not d.is_finite() or d <= 0:
+        raise BadRequest(f"{name} must be a positive number")
+    return d
+
+
+def fillcheck_preview(body: dict) -> dict:
+    text = _csv_field(body, "csv")
+    try:
+        headers = fillcheck.read_headers(text)
+    except fillcheck.FillCheckError as e:
+        raise BadRequest(str(e)) from None
+    if not headers:
+        raise BadRequest("the file is empty")
+    rows = []
+    for rec in fillcheck._reader(text):
+        if len(rows) > 5:
+            break
+        rows.append(rec)
+    return {"headers": headers, "mapping": fillcheck.detect_mapping(headers), "rows": rows[1:6],
+            "fields": list(fillcheck.FIELDS), "required": list(fillcheck.REQUIRED)}
+
+
+def fillcheck_run(body: dict) -> dict:
+    logs = {}
+    for side, label in (("broker", "broker file"), ("bot", "bot log")):
+        try:
+            logs[side] = fillcheck.parse(_csv_field(body, f"{side}_csv"), _mapping_field(body, f"{side}_mapping"))
+        except fillcheck.FillCheckError as e:
+            raise BadRequest(f"{label}: {e}") from None
+    return fillcheck.check(logs["broker"], logs["bot"], _positive_decimal(body, "max_position"),
+                           _positive_decimal(body, "mark"))
+
+
+SAMPLES = {"small": ("broker_fills.csv", "bot_log.csv", 5),
+           "realistic": ("realistic_broker.csv", "realistic_bot.csv", 20)}
+
+
+def fillcheck_sample(name: str = "small") -> dict:
+    if name not in SAMPLES:
+        raise BadRequest(f"unknown sample; choose one of {', '.join(SAMPLES)}")
+    broker, bot, limit = SAMPLES[name]
+    d = os.path.join(ROOT, "examples", "fills")
+    with open(os.path.join(d, broker)) as f, open(os.path.join(d, bot)) as g:
+        return {"broker_csv": f.read(), "bot_csv": g.read(), "broker_name": broker, "bot_name": bot,
+                "suggested_limit": limit}
+
+
 # ---- server ----
 
 class Console:
@@ -455,7 +636,7 @@ class Console:
         s = self.session
         if s is None or s.state != "running":
             raise Conflict("faults can only be injected during a run")
-        return {"ok": True, "note": self.call(lambda: s.fault(kind, venue_id))}
+        return {"ok": True, **self.call(lambda: s.fault(kind, venue_id))}
 
     def start_job(self, name: str) -> dict:
         with self.lock:
@@ -518,9 +699,9 @@ def make_handler(console: Console):
         def _json(self, obj, code=HTTPStatus.OK):
             self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json")
 
-        def _body(self) -> dict:
+        def _body(self, limit: int = MAX_BODY) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
+            if n > limit:
                 raise BadRequest("request body too large")
             raw = self.rfile.read(n) if n else b"{}"
             try:
@@ -550,7 +731,8 @@ def make_handler(console: Console):
             q = parse_qs(u.query)
             routes = {"/api/live": lambda: console.live(q.get("detail") == ["1"]),
                       "/api/quant": quant_summary, "/api/replay": replay_summary,
-                      "/api/evidence": evidence_summary}
+                      "/api/evidence": evidence_summary,
+                      "/api/fillcheck/sample": lambda: fillcheck_sample((q.get("name") or ["small"])[0])}
             if u.path in routes:
                 return self._dispatch(routes[u.path])
             m = re.fullmatch(r"/api/jobs/(\w+)", u.path)
@@ -575,7 +757,9 @@ def make_handler(console: Console):
                     raise BadRequest("order faults apply to venue A (the execution venue)")
                 return console.fault(kind, venue)
 
-            routes = {"/api/run": run, "/api/stop": console.stop_run, "/api/fault": fault}
+            routes = {"/api/run": run, "/api/stop": console.stop_run, "/api/fault": fault,
+                      "/api/fillcheck/preview": lambda: fillcheck_preview(self._body(MAX_FILLCHECK_BODY)),
+                      "/api/fillcheck": lambda: fillcheck_run(self._body(MAX_FILLCHECK_BODY))}
             if path in routes:
                 return self._dispatch(routes[path])
             m = re.fullmatch(r"/api/jobs/(\w+)", path)

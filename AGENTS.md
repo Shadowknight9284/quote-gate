@@ -45,6 +45,7 @@ Expected synthetic results (pre-fee / post-fee mean): null −8973.8 / −25563.
 | `importer.py`, `normalize.py` | optional Tiger Data import (safeguarded) | docs/tiger-data.md |
 | `l2book.py`, `ws_client.py`, `coinbase_capture.py`, `coinbase_replay.py` | real-data capture/replay | docs/contracts/R1-coinbase.md |
 | `console.py` (+ `web/`) | local browser console: live loopback run, fault hooks, evidence checks | docs/console.md |
+| `fillcheck.py` | reconcile a broker fill CSV against a bot trade log (pure) | docs/console.md |
 
 ## Invariants tests enforce (do not weaken)
 - Old/duplicate sequences never roll state back; reconnect = new epoch, fresh snapshot required.
