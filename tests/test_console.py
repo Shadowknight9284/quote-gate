@@ -52,7 +52,7 @@ class ConsoleApi(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn(b"QuoteGate", body)
         self.assertEqual(self.req("/app.js")[0], 200)
-        self.assertEqual(self.req("/../README.md")[0], 404)       # only the three known files are served
+        self.assertEqual(self.req("/../README.md")[0], 404)       # only the listed web files are served
         self.assertEqual(self.req("/api/nope")[0], 404)
 
     def test_input_validation(self):
@@ -91,15 +91,39 @@ class ConsoleApi(unittest.TestCase):
         self.assertTrue(e["hashes"])
         self.assertEqual(console.verify_hashes()["all_match"], True)
 
+    def test_fill_check_endpoints(self):
+        code, smp = self.api("/api/fillcheck/sample")
+        self.assertEqual(code, 200)
+        code, pv = self.api("/api/fillcheck/preview", {"csv": smp["bot_csv"]})
+        self.assertEqual((code, pv["mapping"]["order_id"], len(pv["rows"])), (200, "client_order_id", 5))
+        code, r = self.api("/api/fillcheck", {"broker_csv": smp["broker_csv"], "bot_csv": smp["bot_csv"],
+                                              "max_position": "5"})
+        self.assertEqual(code, 200)
+        self.assertEqual(r["summary"]["matched"], 10)
+        self.assertFalse(r["positions"]["agree"])
+        self.assertEqual(self.api("/api/fillcheck", {"broker_csv": "x,y\n1,2\n", "bot_csv": smp["bot_csv"]})[0], 400)
+        self.assertEqual(self.api("/api/fillcheck", {"broker_csv": smp["broker_csv"], "bot_csv": smp["bot_csv"],
+                                                     "max_position": "-1"})[0], 400)
+        self.assertEqual(self.api("/api/fillcheck", {"broker_csv": smp["broker_csv"], "bot_csv": 5})[0], 400)
+
     def test_run_fault_and_reconciliation(self):
         self.assertEqual(self.api("/api/fault", {"kind": "drop_next_ack"})[0], 409)   # no run yet
         code, r = self.api("/api/run", {"seed": 7, "seconds": 5})
         self.assertEqual(code, 200, r)
         self.assertEqual(self.api("/api/run", {"seed": 7, "seconds": 5})[0], 409)     # one run at a time
         self.wait(lambda s: s.get("counters", {}).get("filled", 0) > 5)
+        code, f = self.api("/api/fault", {"kind": "pause_feed_1s", "venue": "B"})
+        self.assertEqual(code, 200)
+        s = self.wait(lambda s: s["faults"][0]["state"] != "pending")
+        rec = s["faults"][0]
+        self.assertEqual((rec["id"], rec["state"]), (f["id"], "handled"))
+        self.assertLess(rec["observed_ms"], 200)                  # stale detected near the 50 ms threshold
         self.assertEqual(self.api("/api/fault", {"kind": "drop_next_ack"})[0], 200)
         s = self.wait(lambda s: s["counters"]["resolved_by_status"] >= 1)
         self.assertGreaterEqual(s["counters"]["timeouts"], 1)
+        s = self.wait(lambda s: s["faults"][1]["state"] != "pending")
+        self.assertEqual(s["faults"][1]["state"], "handled")
+        self.assertIsNotNone(s["pnl"]["equity_ticks"] if s["ledger"]["position"] else 0)
         self.assertEqual(self.api("/api/fault", {"kind": "pause_feed", "venue": "A"})[0], 200)
         s = self.wait(lambda s: s["venues"]["A"]["status"] == "stale")
         self.assertEqual(s["trading"], "no_signal")

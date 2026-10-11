@@ -5,22 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QuoteGate Console</title>
 <meta name="description" content="Local operations console for the QuoteGate simulated trading workflow.">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="topbar">
-  <div class="brand">
-    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <rect x="3" y="4" width="5" height="24" rx="1.5"/><rect x="24" y="4" width="5" height="24" rx="1.5"/>
-      <path d="M8 10h16M8 16h16M8 22h16" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-    <div>
-      <div class="brand-name">QuoteGate</div>
-      <div class="brand-sub">Operations console</div>
-    </div>
-  </div>
+  <div class="brand-mobile"><img src="/favicon.png" alt="" width="28" height="28"><span>QuoteGate</span></div>
 
   <div class="top-status">
     <span class="chip chip-sim" title="Everything is simulated: no exchange account, no funds, no real orders.">
@@ -55,8 +48,13 @@
 </header>
 
 <nav class="rail" aria-label="Sections">
+  <a class="rail-brand" href="#live" aria-label="QuoteGate home"><img src="/logo.png" alt="QuoteGate" width="560" height="424"></a>
+  <div class="rail-section">Workspace</div>
   <button class="rail-item" data-tab="live" aria-current="page">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Live</span>
+  </button>
+  <button class="rail-item" data-tab="fills">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="m9 14 2 2 4-4"/></svg><span>Check fills</span>
   </button>
   <button class="rail-item" data-tab="orders">
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Orders</span>
@@ -64,6 +62,8 @@
   <button class="rail-item" data-tab="quant">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/></svg><span>Quant</span>
   </button>
+  <div class="rail-spacer" aria-hidden="true"></div>
+  <div class="rail-section rail-section-about">About this project</div>
   <button class="rail-item" data-tab="evidence">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>Evidence</span>
   </button>
@@ -73,21 +73,40 @@
 
 <!-- ================= LIVE ================= -->
 <section id="tab-live" class="tab" aria-labelledby="h-live">
-  <h1 id="h-live" class="sr-only">Live run</h1>
+  <header class="page-h">
+    <h1 id="h-live">Live run</h1>
+    <p class="crumb">Two simulated venues and the strategy, running on this machine</p>
+  </header>
 
   <div id="live-empty" class="empty card">
-    <svg class="empty-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <rect x="3" y="4" width="5" height="24" rx="1.5"/><rect x="24" y="4" width="5" height="24" rx="1.5"/>
-      <path d="M8 10h16M8 16h16M8 22h16" stroke-width="2" stroke-linecap="round"/>
-    </svg>
+    <img class="empty-logo" src="/logo.png" alt="" width="560" height="424">
     <h2>No run yet</h2>
     <p>Start a run to launch two simulated venues and the aggregator on loopback.
       Venue A is the strategy's reference and its execution venue; venue B streams market data only.
       Quotes older than 50&nbsp;ms are stale and never traded on.</p>
-    <button class="btn btn-primary" data-action="start">Start run</button>
+    <div class="empty-actions">
+      <button class="btn btn-primary" data-action="guided">Run guided demo</button>
+      <button class="btn" data-action="start">Start a free run</button>
+    </div>
+    <p class="fine">New here? The guided demo walks through three failures and checks each outcome for you (about 1 minute).</p>
   </div>
 
   <div id="live-body" hidden>
+    <div id="status-strip" class="status-strip" data-tone="neutral" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span>
+      <p id="status-text">Waiting for the run to start.</p>
+      <button class="link-btn" id="status-why" aria-expanded="false" aria-controls="status-why-text">Why?</button>
+      <p id="status-why-text" class="why" hidden></p>
+    </div>
+
+    <article id="guide" class="card guide" hidden>
+      <header class="card-h">
+        <h2>Guided demo</h2>
+        <span class="hint" id="guide-progress">0 of 3 checks passed</span>
+      </header>
+      <ol class="guide-steps" id="guide-steps"></ol>
+    </article>
+
     <div class="kpis">
       <article class="card kpi"><h2 class="label">Orders sent</h2><div class="kpi-val mono" data-k="sent">0</div><svg class="spark" data-spark="sent" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"></svg></article>
       <article class="card kpi"><h2 class="label">Filled</h2><div class="kpi-val mono" data-k="filled">0</div><svg class="spark" data-spark="filled" viewBox="0 0 120 28" preserveAspectRatio="none" aria-hidden="true"></svg></article>
@@ -172,6 +191,7 @@
             <button class="btn btn-danger" data-fault="restart_mid_order">Inject</button>
           </li>
         </ul>
+        <p class="fine fault-hint" id="fault-hint">Start a run to inject faults.</p>
         <dl class="stats3 fault-counters">
           <div><dt>Ack timeouts</dt><dd class="mono" data-k="timeouts">0</dd></div>
           <div><dt>Resolved via status</dt><dd class="mono" data-k="by-status">0</dd></div>
@@ -195,9 +215,65 @@
   </div>
 </section>
 
+<!-- ================= CHECK FILLS ================= -->
+<section id="tab-fills" class="tab" aria-labelledby="h-fills" hidden>
+  <header class="page-h">
+    <h1 id="h-fills">Check fills</h1>
+    <p class="crumb">Compare your broker's fill export with your bot's trade log</p>
+  </header>
+  <div class="grid-fills">
+    <article class="card span-fills-intro">
+      <header class="card-h">
+        <h2>Does your bot's ledger match your broker?</h2>
+        <div class="hash-actions">
+          <span class="hint">Try it:</span>
+          <button class="btn" data-sample="small" title="12 orders, 4 planted problems">Small sample</button>
+          <button class="btn" data-sample="realistic" title="150 orders with partial fills and rebates, 8 planted problems">Realistic sample</button>
+        </div>
+      </header>
+      <p class="lead">Drop in your broker's fill export and your bot's own trade log (CSV). QuoteGate matches them order by order
+        and tells you which trades were booked twice, never booked, not real, or recorded wrong, and why that usually happens.</p>
+      <p class="fine">Files are read in memory on this machine and never saved. Up to 2&nbsp;MB and 50,000 rows each.
+        The broker file is treated as the source of truth.</p>
+    </article>
+
+    <article class="card span-file" data-file="broker">
+      <header class="card-h"><h2>1 · Broker fill export</h2><span class="hint" data-f="name">No file yet</span></header>
+      <label class="drop">
+        <input type="file" accept=".csv,text/csv" data-f="input">
+        <span><b>Choose a CSV</b> or drop it here</span>
+      </label>
+      <div class="mapping" data-f="mapping" hidden></div>
+    </article>
+
+    <article class="card span-file" data-file="bot">
+      <header class="card-h"><h2>2 · Your bot's trade log</h2><span class="hint" data-f="name">No file yet</span></header>
+      <label class="drop">
+        <input type="file" accept=".csv,text/csv" data-f="input">
+        <span><b>Choose a CSV</b> or drop it here</span>
+      </label>
+      <div class="mapping" data-f="mapping" hidden></div>
+    </article>
+
+    <article class="card span-fills-run">
+      <div class="fills-options">
+        <label class="field"><span>Position limit (optional)</span><input id="fills-limit" type="text" inputmode="decimal" placeholder="e.g. 5"></label>
+        <label class="field"><span>Mark price for open position (optional)</span><input id="fills-mark" type="text" inputmode="decimal" placeholder="e.g. 100.70"></label>
+        <button class="btn btn-primary" id="fills-run" disabled>Check fills</button>
+      </div>
+      <p class="fine" id="fills-run-hint">Add both files to check them.</p>
+    </article>
+
+    <div id="fills-report" class="span-report" hidden></div>
+  </div>
+</section>
+
 <!-- ================= ORDERS ================= -->
 <section id="tab-orders" class="tab" aria-labelledby="h-orders" hidden>
-  <h1 id="h-orders" class="sr-only">Orders and reconciliation</h1>
+  <header class="page-h">
+    <h1 id="h-orders">Orders &amp; reconciliation</h1>
+    <p class="crumb">Every order's outcome, and the venue's records against the ledger</p>
+  </header>
   <div id="orders-empty" class="empty card">
     <h2>No run yet</h2><p>Orders, reconciliation and round-trip times appear here once a run starts.</p>
     <button class="btn btn-primary" data-action="start">Start run</button>
@@ -252,7 +328,10 @@
 
 <!-- ================= QUANT ================= -->
 <section id="tab-quant" class="tab" aria-labelledby="h-quant" hidden>
-  <h1 id="h-quant" class="sr-only">Quant lab</h1>
+  <header class="page-h">
+    <h1 id="h-quant">Quant lab</h1>
+    <p class="crumb">The strategy, the 30-seed experiment and the real-data replay</p>
+  </header>
   <div class="grid-quant">
     <article class="card span-explain">
       <header class="card-h"><h2>Strategy</h2><span class="hint">Frozen before evaluation</span></header>
@@ -304,18 +383,22 @@
 
 <!-- ================= EVIDENCE ================= -->
 <section id="tab-evidence" class="tab" aria-labelledby="h-evidence" hidden>
-  <h1 id="h-evidence" class="sr-only">Evidence</h1>
+  <header class="page-h">
+    <h1 id="h-evidence">Evidence</h1>
+    <p class="crumb">Tests, published measurements and file hashes</p>
+  </header>
   <div class="grid-evidence">
     <article class="card span-tests">
       <header class="card-h"><h2>Test suite</h2><span class="hint">Standard library <code>unittest</code></span></header>
       <div class="tests-row">
-        <div class="mono huge" id="tests-count">—</div>
-        <div>
+        <div class="tests-left">
+          <div class="tests-stat"><div class="huge" id="tests-count">—</div><div class="label">tests run</div></div>
           <div id="tests-status" class="badge" data-tone="neutral"><span class="dot"></span><span class="label">Not run in this session</span></div>
-          <p class="fine" id="tests-summary">Runs <code>python3 -m unittest discover -s tests -t .</code></p>
         </div>
         <button class="btn btn-primary" id="tests-btn">Run tests</button>
       </div>
+      <p class="fine" id="tests-summary">Runs the full suite on this machine with Python's built-in test runner.</p>
+      <pre class="cmd"><code>python3 -m unittest discover -s tests -t .</code></pre>
     </article>
 
     <article class="card span-limits">
@@ -354,6 +437,17 @@
   </div>
 </section>
 </main>
+
+<dialog id="scorecard" class="scorecard" aria-labelledby="sc-title">
+  <form method="dialog">
+    <header class="card-h"><h2 id="sc-title">Run complete</h2><span class="hint" id="sc-sub"></span></header>
+    <div id="sc-body"></div>
+    <div class="sc-actions">
+      <button type="button" class="btn" id="sc-download">Download report (JSON)</button>
+      <button class="btn btn-primary" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script src="/app.js"></script>

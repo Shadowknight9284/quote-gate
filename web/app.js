@@ -5,6 +5,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => Array.from(root.querySelectorAll(s));
 const NS = "http://www.w3.org/2000/svg";
 const fmt = new Intl.NumberFormat("en-US");
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const n = (v) => (v === null || v === undefined ? "—" : fmt.format(v));
 const signed = (v) => (v === null || v === undefined ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmt.format(Math.abs(v)));
 const us = (ns) => (ns === undefined || ns === null ? "—" : ns >= 1e6 ? (ns / 1e6).toFixed(2) + " ms" : (ns / 1e3).toFixed(1) + " µs");
@@ -25,6 +26,7 @@ const REASONS = { stale: "stale", disconnected: "disconnected", invalid: "invali
   insufficient_quantity: "size too small", not_allowed: "not allowed" };
 
 const state = { tab: "live", snap: null, busy: false, history: { sent: [], filled: [] }, seenEvents: new Map(),
+  guide: null, faultStates: {}, sawRun: false, scorecardShown: false, fills: { broker: null, bot: null },
   lastLife: {}, filter: "all", quantLoaded: false, evidenceLoaded: false };
 
 // ---------- helpers ----------
@@ -123,7 +125,7 @@ function showTab(name, focus = false) {
 }
 
 // ---------- run controls ----------
-async function toggleRun(e) {
+async function toggleRun(e, guided = false) {
   e?.preventDefault();
   const running = state.snap && ["running", "starting", "settling"].includes(state.snap.state);
   try {
@@ -132,13 +134,16 @@ async function toggleRun(e) {
       toast("Stopping: letting in-flight orders resolve…");
     } else {
       const seed = parseInt($("#seed").value, 10);
-      const seconds = parseInt($("#seconds").value, 10);
+      const seconds = guided ? 90 : parseInt($("#seconds").value, 10);
       if (!Number.isInteger(seed) || seed < 1 || seed > 1000000) return toast("Seed must be an integer from 1 to 1,000,000.", "bad");
       await api("/api/run", { seed, seconds });
       state.history = { sent: [], filled: [] };
       state.seenEvents.clear();
       state.lastLife = {};
-      toast(`Run started: seed ${seed}, ${seconds} s.`);
+      state.faultStates = {};
+      state.scorecardShown = false;
+      state.guide = guided ? { ids: {} } : null;
+      toast(guided ? "Guided demo started: follow the three steps." : `Run started: seed ${seed}, ${seconds} s.`);
       showTab("live");
       requestAnimationFrame(() => reveal($("#live-body")));
     }
@@ -148,13 +153,26 @@ async function toggleRun(e) {
   }
 }
 
+const FAULT_TARGET = { pause_feed: "venue", pause_feed_1s: "venue", resume_feed: "venue", drop_connection: "venue",
+  drop_next_ack: "orders", disconnect_after_exec: "orders", restart_mid_order: "orders" };
+function flash(node) {
+  if (!node || reduceMotion) return;
+  node.classList.remove("flash");
+  void node.offsetWidth;
+  node.classList.add("flash");
+}
+
 async function fault(kind, venue = "A") {
   try {
     const r = await api("/api/fault", { kind, venue });
-    toast(`Venue ${venue}: ${r.note}`);
+    toast(`Venue ${venue}: ${r.note}. Expect: ${r.expect}.`);
+    if (FAULT_TARGET[kind] === "venue") flash($(`.venue[data-venue="${venue}"]`));
+    else { flash($(".span-faults")); flash($('[data-k="unresolved"]')?.closest(".card")); }
     poll(true);
+    return r;
   } catch (err) {
     toast(err.message, "bad");
+    return null;
   }
 }
 
@@ -194,7 +212,17 @@ function render(s) {
   if (btn._active !== active) btn._active = active, $("svg", btn).innerHTML = active ? '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/>' : '<path d="M4 2.5v11l9-5.5z" fill="currentColor"/>';
   $("#seed").disabled = active;
   $("#seconds").disabled = active;
-  $$("[data-fault], [data-venue-act]").forEach((b) => { b.disabled = s.state !== "running"; });
+  $$("[data-fault], [data-venue-act]").forEach((b) => {
+    b.disabled = s.state !== "running";
+    b.title = s.state === "running" ? "" : "Start a run to inject faults";
+  });
+  $("#fault-hint").hidden = s.state === "running";
+  if (active) state.sawRun = true;
+  if (s.faults) announceFaults(s.faults);
+  if (s.state === "complete" && state.sawRun && !state.scorecardShown && s.reconciliation) {
+    state.scorecardShown = true;
+    showScorecard(s);
+  }
 
   const tb = $("#trading-badge");
   if (idle) setTone(tb, "neutral", "Idle");
@@ -214,7 +242,7 @@ function render(s) {
   $("#orders-empty").hidden = !idle;
   $("#orders-body").hidden = idle;
   if (idle) return;
-  if (state.tab === "live") renderLive(s);
+  if (state.tab === "live") { renderStatus(s); renderGuide(s); renderFaultResults(s); renderLive(s); }
   if (state.tab === "orders" && s.reconciliation) renderOrders(s);
 }
 
@@ -398,7 +426,7 @@ function renderRoute(p) {
     const ex = el("div", { class: "excluded" }, d.excluded.length
       ? d.excluded.map(([v, r]) => el("span", { class: "ex-chip", text: `${v} excluded · ${REASONS[r] || r}` }))
       : [el("span", { class: "hint", text: "no venue excluded" })]);
-    host.append(el("div", { class: "route-row" }, [el("div", { class: "route-main" }, [el("span", { class: `side-tag ${side}`, text: side.toUpperCase() + " 1" }), to]), ex]));
+    host.append(el("div", { class: "route-row" }, [el("div", { class: "route-main" }, [el("span", { class: `side-tag ${side}`, text: `${cap(side)} 1` }), to]), ex]));
   }
 }
 
@@ -416,7 +444,7 @@ function renderEvents(s) {
     const at = s.elapsed_s + t, key = `${vid}|${kind}|${text}`, seen = state.seenEvents.get(key) || [];
     const li = el("li", { "data-tone": eventTone(kind, text) }, [
       el("span", { class: "t", text: `${t.toFixed(1)} s` }), el("span", { class: "v", text: vid }),
-      el("span", { class: "k", text: kind }), el("span", { class: "msg", text })]);
+      el("span", { class: "k", text: cap(kind) }), el("span", { class: "msg", text })]);
     if (!seen.some((x) => Math.abs(x - at) < 0.05)) { li.classList.add("new"); seen.push(at); state.seenEvents.set(key, seen); }
     frag.append(li);
   }
@@ -443,11 +471,11 @@ function renderOrders(s) {
   $("#feed-rtt").replaceChildren(...Object.entries(s.feed_rtt).map(([v, r]) => el("div", {}, [el("dt", { text: `Venue ${v}` }), el("dd", { class: "mono", text: us(r.p50) })])));
   const rows = s.orders.map((o) => el("tr", {}, [
     el("td", { class: "mono", text: o.oid }),
-    el("td", {}, [el("span", { class: `side-tag ${o.side}`, text: o.side.toUpperCase() })]),
+    el("td", {}, [el("span", { class: `side-tag ${o.side}`, text: cap(o.side) })]),
     el("td", { class: "num", text: n(o.qty) }), el("td", { class: "num", text: n(o.limit) }),
-    el("td", {}, [el("span", { class: "pill", "data-tone": o.status === "FILLED" ? "good" : "warn", text: o.status === "FILLED" ? "FILLED" : `REJECTED · ${REASONS[o.reason] || o.reason || "—"}` })]),
+    el("td", {}, [el("span", { class: "pill", "data-tone": o.status === "FILLED" ? "good" : "warn", text: o.status === "FILLED" ? "Filled" : `Rejected · ${REASONS[o.reason] || o.reason || "—"}` })]),
     el("td", { class: "num", text: n(o.price) }), el("td", { class: "num", text: n(o.fee) }),
-    el("td", {}, [el("span", { class: "pill", "data-tone": o.via === "exec" ? "neutral" : "unknown", text: o.via === "exec" ? "execution report" : o.via.replace(/_/g, " ") })]),
+    el("td", {}, [el("span", { class: "pill", "data-tone": o.via === "exec" ? "neutral" : "unknown", text: o.via === "exec" ? "Execution report" : cap(o.via.replace(/_/g, " ")) })]),
   ]));
   $("#orders-rows").replaceChildren(...(rows.length ? rows : [el("tr", {}, [el("td", { colspan: 8, class: "hint", text: "No resolved orders yet." })])]));
 }
@@ -455,8 +483,8 @@ function renderOrders(s) {
 function renderLifecycle(v) {
   const host = $("#lifecycle");
   const nodes = [
-    ["sent", "SENT", 20, 85, "accent"], ["resolved", "RESOLVED", 480, 12, "good"],
-    ["unknown", "UNKNOWN", 250, 145, "unknown"], ["lost", "LOST RECORD", 480, 145, "bad"]];
+    ["sent", "Sent", 20, 85, "accent"], ["resolved", "Resolved", 480, 12, "good"],
+    ["unknown", "Unknown", 250, 145, "unknown"], ["lost", "Lost record", 480, 145, "bad"]];
   const edges = [
     ["e_exec", "M150,100 C300,100 330,42 480,42", "execution report", 300, 62],
     ["e_unknown", "M150,130 C200,130 200,175 250,175", "timeout / disconnect", 120, 172],
@@ -642,7 +670,7 @@ function reproduce() {
   runJob("reproduce", (r) => {
     if (r.error) { out.textContent = `Failed: ${r.error}`; return; }
     out.innerHTML = "";
-    out.append(el("span", { class: "pill", "data-tone": r.ok ? "good" : "bad", text: r.ok ? "MATCH" : "DIFFERENT" }),
+    out.append(el("span", { class: "pill", "data-tone": r.ok ? "good" : "bad", text: r.ok ? "Match" : "Different" }),
       document.createTextNode(r.ok ? ` All ${r.compared_keys.length} keys equal the published source (run ID excluded) · ${r.seconds} s`
         : ` Differs in: ${r.differing_keys.join(", ")}`));
   }, $("#repro-btn"));
@@ -657,7 +685,7 @@ async function loadEvidence() {
     $("#hash-rows").replaceChildren(...e.hashes.map((h) => el("tr", { "data-file": h.file }, [
       el("td", { class: "mono", text: h.file }),
       el("td", { class: "mono hash", title: h.sha256, text: `${h.sha256.slice(0, 16)}…${h.sha256.slice(-8)}` }),
-      el("td", {}, [el("span", { class: "pill", "data-tone": "neutral", text: "not checked" })])])));
+      el("td", {}, [el("span", { class: "pill", "data-tone": "neutral", text: "Not checked" })])])));
     reveal($(".grid-evidence"));
   } catch (err) {
     state.evidenceLoaded = false;
@@ -686,7 +714,7 @@ function verify() {
       if (!row) continue;
       const pill = $(".pill", row);
       pill.dataset.tone = f.match ? "good" : "bad";
-      pill.textContent = f.match ? "matches" : f.actual === null ? "missing" : "MISMATCH";
+      pill.textContent = f.match ? "Matches" : f.actual === null ? "Missing" : "Mismatch";
     }
     $("#hash-status").textContent = r.all_match ? `All ${r.files.length} files match.` : "Some files do not match.";
   }, $("#verify-btn"));
@@ -695,18 +723,344 @@ function verify() {
 function runTests() {
   const b = $("#tests-status");
   setTone(b, "accent", "Running…");
-  $("#tests-summary").textContent = "Running python3 -m unittest discover -s tests -t .";
+  $("#tests-summary").textContent = "Running the full suite…";
   runJob("tests", (r) => {
     if (r.error) { setTone(b, "bad", "Error"); $("#tests-summary").textContent = r.error; return; }
+    $("#tests-count").classList.add("has-value");
     tween($("#tests-count"), r.ran);
     setTone(b, r.ok ? "good" : "bad", r.ok ? "Passing" : "Failing");
     $("#tests-summary").textContent = `${r.summary} · ${r.seconds} s`;
   }, $("#tests-btn"));
 }
 
+// ---------- plain-English status ----------
+function renderStatus(s) {
+  const A = s.venues?.A, c = s.counters;
+  const unknown = s.unresolved.filter(([, st]) => st === "UNKNOWN").map(([o]) => o);
+  const lost = s.unresolved.filter(([, st]) => st === "LOST_RECORD").map(([o]) => o);
+  let tone, text, why;
+  if (s.error) {
+    [tone, text, why] = ["bad", `The run stopped with an error: ${s.error}`, "See the terminal running the console for details."];
+  } else if (s.state === "complete") {
+    const r = s.reconciliation;
+    [tone, text] = r && r.mismatched === 0 && r.ledger_not_at_venue === 0 && (r.unbooked_venue_fills === 0 || r.unbooked_all_unresolved)
+      ? ["good", `Run finished: ${n(c.filled)} fills, books match the venue${r.unbooked_venue_fills ? " (gap explained by an unresolved order)" : ""}.`]
+      : ["bad", "Run finished, but the books do not match the venue. See Orders."];
+    why = "At the end, QuoteGate compares every fill the venue recorded with every fill the strategy booked: same order, quantity, price and fee.";
+  } else if (s.state === "settling") {
+    [tone, text, why] = ["accent", "Ending the run: no new orders, letting in-flight orders resolve.", "Orders already sent may still be answered. Waiting a moment means the final audit includes them."];
+  } else if (s.trading === "halted_lost_record") {
+    [tone, text] = ["bad", `Halted: venue A restarted and forgot order ${lost.join(", ")}. QuoteGate will not guess whether it executed.`];
+    why = "The venue no longer has a record of the order, so nobody can say whether it filled. Guessing either way could leave the books wrong. A real desk would escalate to a person; QuoteGate stays halted and the audit reports the gap.";
+  } else if (s.trading === "halted_unknown") {
+    [tone, text] = ["unknown", `Waiting: the outcome of order ${unknown.join(", ")} is unknown. Asking the venue (${n(c.status_queries)} status queries so far).`];
+    why = "The confirmation never arrived, so the order may or may not have executed. Sending it again could buy twice; ignoring it could leave a position nobody tracks. So trading pauses until the venue answers.";
+  } else if (s.trading === "no_signal") {
+    text = A.status === "stale" ? `Paused: venue A's last price is ${A.age_ms?.toFixed(0)} ms old (limit ${s.stale_ms} ms).`
+      : `Paused: venue A is ${(STATUS[A.status] || STATUS.no_quote).label.toLowerCase()}.`;
+    [tone, why] = ["warn", "Trading on an old price risks buying or selling at a price that no longer exists. QuoteGate waits for a fresh quote instead of guessing."];
+  } else {
+    [tone, text] = ["good", `Trading normally: venue A's price is ${A.age_ms?.toFixed(1)} ms old, under the ${s.stale_ms} ms limit.`];
+    why = "The strategy trades only when venue A's latest price is fresh, no order outcome is unknown, and the position stays within ±5.";
+  }
+  const strip = $("#status-strip");
+  if (strip.dataset.tone !== tone) setTone(strip, tone);
+  $("#status-text").textContent = text;
+  $("#status-why-text").textContent = why;
+}
+
+// ---------- guided demo ----------
+const GUIDE = [
+  { kind: "pause_feed_1s", title: "Freeze venue A's prices for 1 second",
+    desc: "A real feed can stall. Expect: within 50 ms venue A is marked stale, trading pauses, and the router stops using it. Then it recovers." },
+  { kind: "drop_next_ack", title: "Lose an order confirmation",
+    desc: "The venue executes an order but its reply never arrives. Expect: the order goes UNKNOWN, trading halts, QuoteGate asks the venue, and books the answer. It never resends." },
+  { kind: "restart_mid_order", title: "Restart the venue in the middle of an order",
+    desc: "The venue forgets its orders. Expect: the order can't be resolved, so QuoteGate stays halted instead of guessing, and the audit explains the gap." },
+];
+const STATE_TEXT = { pending: "Watching for the expected outcome…", handled: "✓ Passed", not_observed: "Not observed",
+  skipped: "Skipped" };
+
+function renderGuide(s) {
+  const card = $("#guide");
+  card.hidden = !state.guide;
+  if (!state.guide) return;
+  const recs = Object.fromEntries((s.faults || []).map((f) => [f.id, f]));
+  let passed = 0, unlocked = true;
+  const host = $("#guide-steps");
+  if (!host.childElementCount) {
+    GUIDE.forEach((g, i) => {
+      const li = el("li", { class: "guide-step", "data-i": i }, [
+        el("span", { class: "num", text: String(i + 1) }),
+        el("div", {}, [el("h3", { text: g.title }), el("p", { text: g.desc }), el("p", { class: "result" })]),
+        el("button", { class: "btn btn-sm", text: "Do it" })]);
+      $("button", li).addEventListener("click", async () => {
+        const r = await fault(g.kind, "A");
+        if (r) { state.guide.ids[i] = r.id; poll(true); }
+      });
+      host.append(li);
+    });
+    const fin = el("li", { class: "guide-step", "data-i": "finish" }, [
+      el("span", { class: "num", text: "✓" }),
+      el("div", {}, [el("h3", { text: "Finish and see the scorecard" }), el("p", { text: "Stops the run, waits for in-flight orders, and audits every fill." })]),
+      el("button", { class: "btn btn-primary btn-sm", text: "Finish run" })]);
+    $("button", fin).addEventListener("click", () => toggleRun());
+    host.append(fin);
+  }
+  GUIDE.forEach((g, i) => {
+    const li = $(`[data-i="${i}"]`, host), rec = recs[state.guide.ids[i]];
+    const st = rec ? rec.state : unlocked ? "ready" : "locked";
+    li.dataset.state = st;
+    const res = $(".result", li);
+    res.dataset.tone = { handled: "good", pending: "accent", not_observed: "warn", skipped: "warn" }[st] || "neutral";
+    res.textContent = rec ? `${STATE_TEXT[rec.state]}${rec.observed_ms !== null ? ` in ${rec.observed_ms} ms` : ""}${rec.detail ? ` — ${rec.detail}` : ""}` : "";
+    const btn = $("button", li);
+    btn.textContent = rec && rec.state !== "handled" && rec.state !== "pending" ? "Try again" : "Do it";
+    btn.disabled = s.state !== "running" || !unlocked || st === "pending" || st === "handled";
+    if (st === "handled") passed += 1;
+    unlocked = unlocked && st === "handled";
+  });
+  const fin = $('[data-i="finish"]', host);
+  fin.dataset.state = s.state === "complete" ? "handled" : unlocked ? "ready" : "locked";
+  $("button", fin).disabled = !unlocked || s.state !== "running";
+  $("#guide-progress").textContent = `${passed} of ${GUIDE.length} checks passed`;
+}
+
+// ---------- fault outcomes ----------
+function renderFaultResults(s) {
+  const latest = {};
+  for (const f of s.faults || []) latest[f.kind] = f;
+  $$("[data-fault]").forEach((b) => {
+    const li = b.closest("li"), f = latest[b.dataset.fault];
+    let out = $(".fault-result", li);
+    if (!f) { out?.remove(); return; }
+    if (!out) { out = el("span", { class: "fault-result" }); $("div", li).append(out); }
+    out.dataset.tone = { handled: "good", pending: "accent", not_observed: "warn", skipped: "warn" }[f.state];
+    out.textContent = `${STATE_TEXT[f.state]}${f.observed_ms !== null ? ` in ${f.observed_ms} ms` : ""}${f.detail ? ` — ${f.detail}` : ""}`;
+  });
+}
+
+function announceFaults(faults) {
+  for (const f of faults) {
+    const prev = state.faultStates[f.id];
+    state.faultStates[f.id] = f.state;
+    if (prev === "pending" && f.state !== "pending") {
+      toast(f.state === "handled" ? `✓ Handled in ${f.observed_ms} ms: ${f.detail}` : `${STATE_TEXT[f.state]}: ${f.detail}`,
+        f.state === "handled" ? "" : "bad");
+    }
+  }
+}
+
+// ---------- scorecard ----------
+function showScorecard(s) {
+  const c = s.counters, r = s.reconciliation, faults = s.faults || [];
+  const handled = faults.filter((f) => f.state === "handled").length;
+  const clean = r.mismatched === 0 && r.ledger_not_at_venue === 0 && r.unbooked_venue_fills === 0;
+  const explained = !clean && r.mismatched === 0 && r.ledger_not_at_venue === 0 && r.unbooked_all_unresolved;
+  $("#sc-sub").textContent = `seed ${s.seed} · ${s.elapsed_s?.toFixed(0)} s`;
+  const pnl = s.pnl?.equity_ticks;
+  const tiles = [["Orders sent", n(c.sent)], ["Filled", n(c.filled)],
+    ["Books vs venue", clean ? "Match" : explained ? "Gap explained" : "Mismatch"],
+    ["Faults handled", `${handled} / ${faults.length}`], ["Final position", signed(s.ledger.position)],
+    ["Max |position|", `${n(s.ledger.max_abs_position)} / 5`],
+    ["P&L after fees", pnl === null || pnl === undefined ? "—" : `${signed(pnl)} ticks`],
+    ["Unknown / lost", n(s.unresolved.length)]];
+  const verdict = clean || explained
+    ? `Every fill accounted for${explained ? " (one gap, explained by an order the venue forgot)" : ""}. ${handled} of ${faults.length} injected faults handled as expected.`
+    : "The books and the venue disagree. Open the Orders tab for details.";
+  const body = $("#sc-body");
+  body.replaceChildren(
+    el("p", { class: "sc-verdict", text: verdict }),
+    el("dl", { class: "sc-grid" }, tiles.map(([k, v]) => el("div", { class: "sc-tile" }, [el("dt", { text: k }), el("dd", { text: v })]))),
+    ...(faults.length ? [el("div", { class: "label", text: "Faults injected" }), el("ul", { class: "sc-faults" }, faults.map((f) => {
+      const tone = f.state === "handled" ? "good" : "warn";
+      return el("li", { "data-tone": tone }, [el("span", { class: "ic", text: f.state === "handled" ? "✓" : "!" }),
+        el("div", {}, [el("b", { text: `${f.kind.replace(/_/g, " ")} (venue ${f.venue})` }), document.createElement("br"),
+          el("small", { text: `${STATE_TEXT[f.state]}${f.observed_ms !== null ? ` in ${f.observed_ms} ms` : ""}${f.detail ? ` — ${f.detail}` : ""}` })])]);
+    }))] : []),
+    el("p", { class: "fine", text: "P&L is cash plus the open position valued at venue A's last bid (long) or ask (short): hypothetical, no closing trade. Synthetic market; nothing here is real money." }));
+  state.lastReport = s;
+  const dlg = $("#scorecard");
+  if (!dlg.open) dlg.showModal();
+}
+
+function saveFile(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = el("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadReport() {
+  const s = state.lastReport;
+  if (!s) return;
+  const { timeline, ...rest } = s;
+  saveFile(`quotegate-run-seed${s.seed}.json`, JSON.stringify({ generated: new Date().toISOString(), ...rest }, null, 1), "application/json");
+}
+
+// ---------- check fills ----------
+const FIELD_LABEL = { order_id: "Order ID", side: "Side", quantity: "Quantity", price: "Price", fee: "Fee", time: "Time" };
+const KIND_LABEL = { booked_twice: "Booked twice", missing_from_bot: "Missing from bot", not_at_broker: "Not at broker",
+  mismatch: "Mismatch", position_limit: "Over limit" };
+const KIND_TONE = { booked_twice: "bad", missing_from_bot: "bad", not_at_broker: "bad", mismatch: "warn", position_limit: "warn" };
+
+function initFills() {
+  for (const side of ["broker", "bot"]) {
+    const card = $(`[data-file="${side}"]`), input = $('[data-f="input"]', card), drop = $(".drop", card);
+    input.addEventListener("change", () => input.files[0] && readFile(side, input.files[0]));
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      if (e.dataTransfer.files[0]) readFile(side, e.dataTransfer.files[0]);
+    });
+  }
+  $$("[data-sample]").forEach((b) => b.addEventListener("click", async () => {
+    try {
+      const smp = await api(`/api/fillcheck/sample?name=${b.dataset.sample}`);
+      await loadText("broker", smp.broker_name, smp.broker_csv);
+      await loadText("bot", smp.bot_name, smp.bot_csv);
+      $("#fills-limit").value = String(smp.suggested_limit);
+      $("#fills-mark").value = "";
+      toast(`${b.textContent} loaded (see examples/fills/README.md for the planted problems). Press Check fills.`);
+    } catch (err) { toast(err.message, "bad"); }
+  }));
+  $("#fills-run").addEventListener("click", runFillCheck);
+}
+
+function readFile(side, file) {
+  if (file.size > 2_000_000) return toast(`${file.name} is larger than 2 MB.`, "bad");
+  const rd = new FileReader();
+  rd.onload = () => loadText(side, file.name, String(rd.result));
+  rd.onerror = () => toast(`Could not read ${file.name}.`, "bad");
+  rd.readAsText(file);
+}
+
+async function loadText(side, name, text) {
+  const card = $(`[data-file="${side}"]`);
+  try {
+    const pv = await api("/api/fillcheck/preview", { csv: text });
+    state.fills[side] = { name, text, mapping: pv.mapping };
+    $('[data-f="name"]', card).textContent = name;
+    renderMapping(side, pv);
+  } catch (err) {
+    state.fills[side] = null;
+    $('[data-f="name"]', card).textContent = "Could not read file";
+    toast(`${name}: ${err.message}`, "bad");
+  }
+  updateFillsReady();
+}
+
+function renderMapping(side, pv) {
+  const host = $(`[data-file="${side}"] [data-f="mapping"]`);
+  host.hidden = false;
+  const grid = el("div", { class: "map-grid" }, pv.fields.map((f) => {
+    const sel = el("select", { "aria-label": `${FIELD_LABEL[f]} column` }, [el("option", { value: "", text: "— none —" }),
+      ...pv.headers.map((h) => el("option", { value: h, text: h }))]);
+    sel.value = pv.mapping[f] || "";
+    sel.addEventListener("change", () => { state.fills[side].mapping[f] = sel.value || null; updateFillsReady(); });
+    const lab = el("span", {}, [document.createTextNode(FIELD_LABEL[f])]);
+    if (pv.required.includes(f)) lab.append(el("b", { text: " *" }));
+    return el("label", { class: "field" }, [lab, sel]);
+  }));
+  const table = el("table", { class: "table preview" }, [
+    el("thead", {}, [el("tr", {}, pv.headers.map((h) => el("th", { scope: "col", text: h })))]),
+    el("tbody", {}, pv.rows.slice(0, 3).map((r) => el("tr", {}, r.map((v) => el("td", { class: "mono", text: v })))))]);
+  host.replaceChildren(el("div", { class: "label sub", text: "Columns (detected automatically; change if wrong)" }), grid,
+    el("div", { class: "label sub", text: "First rows" }), el("div", { class: "table-wrap" }, [table]));
+}
+
+function updateFillsReady() {
+  const missing = [];
+  for (const [side, label] of [["broker", "broker export"], ["bot", "bot log"]]) {
+    const f = state.fills[side];
+    if (!f) { missing.push(`add the ${label}`); continue; }
+    const need = ["order_id", "quantity", "price"].filter((k) => !f.mapping[k]).map((k) => FIELD_LABEL[k]);
+    if (need.length) missing.push(`map ${need.join(", ")} in the ${label}`);
+  }
+  $("#fills-run").disabled = missing.length > 0;
+  $("#fills-run-hint").textContent = missing.length ? `To check: ${missing.join("; ")}.` : "Ready.";
+}
+
+async function runFillCheck() {
+  const btn = $("#fills-run");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/fillcheck", {
+      broker_csv: state.fills.broker.text, bot_csv: state.fills.bot.text,
+      broker_mapping: state.fills.broker.mapping, bot_mapping: state.fills.bot.mapping,
+      max_position: $("#fills-limit").value.trim() || null, mark: $("#fills-mark").value.trim() || null });
+    renderFillReport(r);
+  } catch (err) {
+    toast(err.message, "bad");
+  } finally {
+    updateFillsReady();
+  }
+}
+
+function renderFillReport(r) {
+  const host = $("#fills-report"), s = r.summary, e = r.economics;
+  const problems = s.booked_twice + s.missing_from_bot + s.not_at_broker + s.mismatch + s.position_limit;
+  const verdict = problems ? `${problems} problem${problems > 1 ? "s" : ""} found across ${n(s.broker_orders)} broker orders`
+    : `All ${n(s.matched)} orders match`;
+  const chips = [["Matched", s.matched, "good"], ["Booked twice", s.booked_twice, "bad"], ["Missing from bot", s.missing_from_bot, "bad"],
+    ["Not at broker", s.not_at_broker, "bad"], ["Mismatched", s.mismatch, "warn"], ["Over position limit", s.position_limit, "warn"],
+    ["Unreadable rows", s.invalid_rows, "warn"]].map(([k, v, tone]) =>
+    el("div", { class: "rchip", "data-tone": v === 0 && tone !== "good" ? "neutral" : tone }, [el("dt", { text: k }), el("dd", { text: n(v) })]));
+  const pos = r.positions;
+  const econ = el("dl", { class: "stats2" }, [["Realized P&L before fees", e.realized_pre_fee], ["Fees paid", e.fees],
+    ["Realized P&L after fees", e.realized_after_fees], ["Final position (broker)", e.final_position],
+    ["Max |position|", e.max_abs_position], ...(e.unrealized_at_mark !== undefined ? [["Open position at mark", e.unrealized_at_mark]] : [])]
+    .filter(([, v]) => v !== undefined).map(([k, v]) => el("div", {}, [el("dt", { text: k }), el("dd", { class: "mono", text: v ?? "—" })])));
+  const rows = r.issues.map((i) => el("tr", {}, [
+    el("td", {}, [el("span", { class: "pill", "data-tone": KIND_TONE[i.kind], text: KIND_LABEL[i.kind] })]),
+    el("td", { class: "mono", text: i.order_id }), el("td", { class: "wrap", text: i.detail }),
+    el("td", { class: "num", text: i.line ?? "—" }), el("td", { class: "issue-cause wrap", text: i.cause })]));
+  const invalid = [...r.invalid.broker.map(([l, why]) => `broker line ${l}: ${why}`), ...r.invalid.bot.map(([l, why]) => `bot line ${l}: ${why}`)];
+  const card = el("article", { class: "card" }, [
+    el("div", { class: "report-head" }, [
+      el("div", {}, [el("p", { class: "report-verdict", text: verdict }), el("p", { class: "fine", text: r.note })]),
+      el("div", { class: "hash-actions" }, [el("button", { class: "btn", id: "fills-json", text: "Download JSON" }),
+        el("button", { class: "btn", id: "fills-csv", text: "Download issues (CSV)" })])]),
+    el("dl", { class: "report-chips" }, chips),
+    el("div", { class: "report-cols" }, [
+      el("div", {}, [el("div", { class: "label", text: "Final position" }),
+        el("dl", { class: "stats2" }, [el("div", {}, [el("dt", { text: "Broker says" }), el("dd", { class: "mono", text: pos.broker })]),
+          el("div", {}, [el("dt", { text: "Your bot's log says" }), el("dd", { class: "mono", text: pos.bot })])]),
+        el("p", { class: "callout", "data-tone": pos.agree ? "good" : "bad", text: pos.agree ? "Positions agree."
+          : "Positions disagree: your bot is trading on a position the broker doesn't hold." })]),
+      el("div", {}, [el("div", { class: "label", text: `Economics from broker fills (${e.order_source || "file order"})` }), econ])]),
+    el("div", { class: "label sub", text: "Issues" }),
+    r.issues.length ? el("div", { class: "table-wrap" }, [el("table", { class: "table" }, [
+      el("thead", {}, [el("tr", {}, ["Problem", "Order", "What differs", "Line", "Usual cause and fix"].map((h) => el("th", { scope: "col", text: h })))]),
+      el("tbody", {}, rows)])]) : el("p", { class: "hint", text: "No issues." }),
+    ...(invalid.length ? [el("div", { class: "label sub", text: "Rows skipped" }), el("ul", { class: "limits" }, invalid.slice(0, 20).map((t) => el("li", { text: t })))] : [])]);
+  host.replaceChildren(card);
+  host.hidden = false;
+  $("#fills-json", host).addEventListener("click", () => saveFile("quotegate-fill-check.json", JSON.stringify(r, null, 1), "application/json"));
+  $("#fills-csv", host).addEventListener("click", () => {
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = ["problem,order_id,detail,line,cause", ...r.issues.map((i) => [KIND_LABEL[i.kind], i.order_id, i.detail, i.line, i.cause].map(q).join(","))];
+    saveFile("quotegate-fill-issues.csv", lines.join("\n") + "\n", "text/csv");
+  });
+  reveal(host);
+  card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+}
+
 // ---------- wiring ----------
 $("#run-form").addEventListener("submit", toggleRun);
 $$('[data-action="start"]').forEach((b) => b.addEventListener("click", toggleRun));
+$$('[data-action="guided"]').forEach((b) => b.addEventListener("click", (e) => toggleRun(e, true)));
+$("#status-why").addEventListener("click", () => {
+  const open = $("#status-why").getAttribute("aria-expanded") === "true";
+  $("#status-why").setAttribute("aria-expanded", String(!open));
+  $("#status-why-text").hidden = open;
+});
+$("#sc-download").addEventListener("click", downloadReport);
+initFills();
 $$("[data-fault]").forEach((b) => b.addEventListener("click", () => fault(b.dataset.fault, "A")));
 $$(".rail-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab, true)));
 $$("[data-filter]").forEach((b) => b.addEventListener("click", () => {
@@ -718,6 +1072,10 @@ $("#repro-btn").addEventListener("click", reproduce);
 $("#verify-btn").addEventListener("click", verify);
 $("#tests-btn").addEventListener("click", runTests);
 
+addEventListener("hashchange", () => {
+  const t = location.hash.slice(1);
+  if (["live", "fills", "orders", "quant", "evidence"].includes(t) && t !== state.tab) showTab(t);
+});
 const initial = location.hash.slice(1);
-showTab(["live", "orders", "quant", "evidence"].includes(initial) ? initial : "live");
+showTab(["live", "fills", "orders", "quant", "evidence"].includes(initial) ? initial : "live");
 poll(true);

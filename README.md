@@ -30,7 +30,7 @@ cd quote-gate && git switch main
 ## Quick start (Python 3.12, standard library only)
 Run from the repository root. No virtualenv, database, or private configuration is needed.
 ```
-python3 -m unittest discover -s tests -t .          # 209 tests; expect "OK"
+python3 -m unittest discover -s tests -t .          # 224 tests; expect "OK"
 python3 -m quote_gate.experiments --out /tmp/qg     # fixed quant matrix, 30 seeds (~6 s)
 python3 -m quote_gate.live --steps 2000             # networked loopback slice (~5 s), JSON report
 ```
@@ -42,7 +42,9 @@ Paper: `cd paper && latexmk -pdf quotegate.tex` (needs a TeX Live install with p
 ## Operations console (browser, optional)
 A local web console over the same code: live venue health and freshness, route previews, the
 strategy and position, fault injection (stale feed, dropped ack, disconnect, venue restart), order
-lifecycle and venue-vs-ledger reconciliation, the experiment matrix, and evidence checks.
+lifecycle and venue-vs-ledger reconciliation, the experiment matrix, and evidence checks. It also
+has a one-minute guided demo with a scorecard, and **Check fills**: upload your broker's fill export
+and your bot's trade log (CSV) to find fills booked twice, missing, not at the broker, or recorded wrong.
 Standard library only; binds 127.0.0.1. See [docs/console.md](docs/console.md).
 ```
 python3 -m quote_gate.console        # then open http://127.0.0.1:8050
