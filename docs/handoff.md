@@ -4,7 +4,39 @@ Read `AGENTS.md` first (rules, code map, invariants). Current status below super
 remain available for reproduction; the blocked-action list remains in force.
 All results are agent-verified only; nothing is human verified.
 
-## Current repository checkpoint (2026-10-10)
+## Project closed (2026-10-14)
+This section supersedes the checkpoints below; they are kept as history.
+Final `main` is `b24d506` (PR #13 merge); its CI run [succeeded](https://github.com/Shadowknight9284/quote-gate/actions/runs/38150956855).
+The standard suite ran 224 tests, OK, on that commit (agent-run, 2026-10-14).
+
+| PR | Disposition | Merged |
+|---|---|---|
+| [#7](https://github.com/Shadowknight9284/quote-gate/pull/7) | documentation consolidation | 2026-10-10 |
+| [#8](https://github.com/Shadowknight9284/quote-gate/pull/8) | paper wording fix | 2026-10-10 |
+| [#9](https://github.com/Shadowknight9284/quote-gate/pull/9) | Lucera submission evidence package | 2026-10-10 |
+| [#10](https://github.com/Shadowknight9284/quote-gate/pull/10) | local operations console (browser) | 2026-10-11 |
+| [#11](https://github.com/Shadowknight9284/quote-gate/pull/11) | Check fills, guided demo, console redesign | 2026-10-11 |
+| [#12](https://github.com/Shadowknight9284/quote-gate/pull/12) | formal paper (LaTeX) | 2026-10-11 |
+| [#13](https://github.com/Shadowknight9284/quote-gate/pull/13) | README rewrite for reviewers | 2026-10-11 |
+
+PRs #1–#6 are listed below. All 13 PRs are merged and none are open. No work is in flight, and no feature work is planned.
+
+Human-run observation: on `5a5ab26` the user ran the console's Order faults card in a browser (seed 101).
+**Restart venue mid-order** passed in 310.3 ms: the order was unresolvable and trading halted.
+**Drop next ack** and **Disconnect after next order** reported *Not observed*, because the lost record had already halted trading, so no later order existed to fault.
+No other human verification was recorded. Everything else in this file is agent-run.
+
+Known inconsistencies, documented and not fixed at close:
+- The paper says "at most one status query in flight". `live.py` actually sends one every 100 ms without waiting for a reply.
+- The paper says exec/status frames are never dropped. The labelled fault hooks drop them on purpose.
+- `docs/console.md` says A is the only execution venue. The backtest can route orders to B.
+- The console's green end-of-run line says the books match even when the result is an "explained gap", which is identified uncertainty, not completed reconciliation.
+- Console P&L marks at A's last quote even when that quote is stale. The backtest marks only when the quote is fresh.
+
+Local disposition: the development checkout was removed. Before removal, the local-only branches (`local/*`, `pr-1`, `research/strategy-comparison`) and the gitignored artifacts and private config were archived outside the repository.
+None of that material was pushed.
+
+## Repository checkpoint (2026-10-10, historical)
 `main` is the integrated starting point; implementation baseline `50b33b7` (PR #6 merge).
 Documentation-only consolidation [PR #7](https://github.com/Shadowknight9284/quote-gate/pull/7)
 updates this checkpoint without changing core code; its linked page records disposition and CI.

@@ -29,7 +29,12 @@ a person independently re-ran it; nothing has reached that level yet.
 | Full and quick demos (PR #6 merged) | tested locally; full matrix means reproduced; quick skips only matrix | `scripts/demo.sh`, [demo.md](demo.md) |
 | Aggregator fairness (flooding client) and shutdown with open clients | fixed after CI exposed them; regression tested | `tests/test_reconnect_ping.py` |
 
-## Current verification checkpoint (2026-10-10)
+## Final state at close (2026-10-14)
+`main` = `b24d506`, with PRs #1–#13 merged. Suite: **224 tests, OK** (agent-run). CI succeeded on that commit.
+The browser console (PRs #10–#11) and the formal paper (PR #12) were added after the checkpoint below.
+The project is closed; see [handoff.md](handoff.md#project-closed-2026-10-14) for merge links, the one human-run console observation, and the known inconsistencies.
+
+## Verification checkpoint (2026-10-10, historical)
 Main includes merged PRs #1–#6; integration baseline `50b33b7` (PR #6 merge).
 Standard suite `python3 -m unittest discover -s tests -t .`: **205 tests, OK**.
 The collection assertion in [.github/workflows/tests.yml](../.github/workflows/tests.yml)
